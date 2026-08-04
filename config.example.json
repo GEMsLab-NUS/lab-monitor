@@ -1,0 +1,18 @@
+{
+  "camera_index": 0,
+  "data_dir": "data",
+  "snapshot_retention_days": 7,
+  "log_retention_days": 180,
+  "min_dwell_seconds": 60,
+  "session_merge_gap_minutes": 15,
+  "unknown_identity_prefix": "Visitor",
+  "poll_interval_ms": 350,
+  "min_event_interval_seconds": 20,
+  "presence_heartbeat_seconds": 300,
+  "stationary_seconds": 120,
+  "max_tracking_distance_px": 120,
+  "web_host": "127.0.0.1",
+  "web_port": 8765,
+  "face_recognition_threshold": 75.0,
+  "unknown_face_label": "unknown"
+}

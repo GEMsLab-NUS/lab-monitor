@@ -1,0 +1,23 @@
+[project]
+name = "lab-monitor"
+version = "0.1.0"
+description = "Local camera-based lab occupancy monitor with event logs and retained feature snapshots only."
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+  "numpy>=1.24",
+  "opencv-contrib-python>=4.9,<5.0",
+]
+
+[dependency-groups]
+dev = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+lab-monitor = "lab_monitor.app:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
