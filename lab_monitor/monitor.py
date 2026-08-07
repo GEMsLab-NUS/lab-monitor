@@ -9,7 +9,15 @@ import numpy as np
 from .config import AppConfig
 from .storage import EventStore
 from .tracking import BBox, CentroidTracker, Track
-from .vision import FaceService, PersonDetector, crop, face_inside_person, load_cv2, person_box_from_face
+from .vision import (
+    FaceService,
+    PersonDetector,
+    crop,
+    face_inside_person,
+    is_person_box_usable,
+    load_cv2,
+    person_box_from_face,
+)
 
 
 @dataclass(slots=True)
@@ -34,6 +42,8 @@ class CameraMonitor:
             config.faces_path,
             config.enrolled_faces_path,
             config.face_recognition_threshold,
+            min_face_size_px=config.min_face_size_px,
+            min_face_area_ratio=config.min_face_area_ratio,
         )
 
     @property
@@ -84,7 +94,16 @@ class CameraMonitor:
     def process_frame(self, frame: np.ndarray) -> None:
         frame = self._resize_for_processing(frame)
         height, width = frame.shape[:2]
-        person_boxes = self._person_detector.detect(frame)
+        person_boxes = [
+            box
+            for box in self._person_detector.detect(frame)
+            if is_person_box_usable(
+                box,
+                frame.shape,
+                min_area_ratio=self.config.min_person_area_ratio,
+                max_area_ratio=self.config.max_person_area_ratio,
+            )
+        ]
         face_boxes = self._face_service.detect_faces(frame)
 
         if not person_boxes and face_boxes:
@@ -126,8 +145,10 @@ class CameraMonitor:
                 dwell_seconds = now - track.first_seen
                 if dwell_seconds < self.config.min_dwell_seconds:
                     continue
-                track.dwell_confirmed_at = now
                 identity, confidence, face_box = self._resolve_track_identity(track, frame, face_boxes)
+                if identity is None:
+                    continue
+                track.dwell_confirmed_at = now
                 track.last_name = identity
                 snapshot_path = self._save_snapshot(frame, face_box or track.bbox, "session", track.id)
                 track.session_id = self.store.upsert_session(
@@ -163,9 +184,8 @@ class CameraMonitor:
             track = self._track_for_face(face)
             if track is None or track.dwell_confirmed_at is None:
                 continue
-            name, confidence = self._face_service.recognize_face(frame, face)
+            name, confidence = self._identify_face(frame, face)
             if name:
-                name = self.store.resolve_identity(name)
                 track.last_name = name
                 if track.session_id is not None:
                     self.store.update_session(track.session_id, identity_name=name, confidence=confidence)
@@ -189,13 +209,13 @@ class CameraMonitor:
         track: Track,
         frame: np.ndarray,
         face_boxes: list[BBox],
-    ) -> tuple[str, float | None, BBox | None]:
+    ) -> tuple[str | None, float | None, BBox | None]:
         for face in face_boxes:
             if not face_inside_person(face, track.bbox):
                 continue
-            name, confidence = self._face_service.recognize_face(frame, face)
+            name, confidence = self._identify_face(frame, face)
             if name:
-                return self.store.resolve_identity(name), confidence, face
+                return name, confidence, face
             identity = (
                 self.store.resolve_identity(track.last_name)
                 if track.last_name
@@ -208,12 +228,22 @@ class CameraMonitor:
                 f"track{track.id}_{int(monotonic() * 1000)}",
             )
             return identity, confidence, face
-        identity = (
-            self.store.resolve_identity(track.last_name)
-            if track.last_name
-            else self.store.allocate_identity(self.config.unknown_identity_prefix)
+        if track.last_name:
+            return self.store.resolve_identity(track.last_name), None, None
+        return None, None, None
+
+    def _identify_face(self, frame: np.ndarray, face: BBox) -> tuple[str | None, float | None]:
+        name, confidence = self._face_service.recognize_face(frame, face)
+        if name:
+            return self.store.resolve_identity(name), confidence
+        soft_name, soft_confidence = self._face_service.recognize_face(
+            frame,
+            face,
+            threshold=self.config.face_soft_match_threshold,
         )
-        return identity, None, None
+        if soft_name:
+            return self.store.resolve_identity(soft_name), soft_confidence
+        return None, soft_confidence if soft_confidence is not None else confidence
 
     def _track_for_face(self, face: BBox) -> Track | None:
         for track in self._tracker.tracks.values():

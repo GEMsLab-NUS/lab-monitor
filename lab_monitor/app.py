@@ -121,6 +121,8 @@ def cmd_enroll(args: argparse.Namespace) -> int:
         config.faces_path,
         config.enrolled_faces_path,
         config.face_recognition_threshold,
+        min_face_size_px=config.min_face_size_px,
+        min_face_area_ratio=config.min_face_area_ratio,
     )
     if args.images:
         image_dir = Path(args.images)

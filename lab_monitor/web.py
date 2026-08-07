@@ -606,7 +606,11 @@ class DashboardServer:
                     selected = data.get("date", [date.today().isoformat()])[0]
                     return_to = data.get("return_to", [""])[0].strip()
                     if old_name and new_name and old_name != new_name:
-                        store.rename_identity(old_name, new_name)
+                        store.rename_identity(
+                            old_name,
+                            new_name,
+                            merge_gap_minutes=runtime_config.session_merge_gap_minutes,
+                        )
                         if monitor is not None:
                             monitor.rename_identity(old_name, new_name)
                         else:
@@ -614,6 +618,8 @@ class DashboardServer:
                                 runtime_config.faces_path,
                                 runtime_config.enrolled_faces_path,
                                 runtime_config.face_recognition_threshold,
+                                min_face_size_px=runtime_config.min_face_size_px,
+                                min_face_area_ratio=runtime_config.min_face_area_ratio,
                             ).rename_label(old_name, new_name)
                     if return_to.startswith("/") and not return_to.startswith("//"):
                         self._redirect(return_to)

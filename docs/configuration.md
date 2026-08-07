@@ -29,6 +29,11 @@ The dashboard `Settings` page can edit the common fields below. Saving from the 
 | `web_host` | `127.0.0.1` | Dashboard bind address. Keep local unless network access is intentionally secured. |
 | `web_port` | `8765` | Dashboard port. |
 | `face_recognition_threshold` | `75.0` | OpenCV LBPH face-recognition distance threshold. Lower is stricter. |
+| `face_soft_match_threshold` | `115.0` | Secondary LBPH threshold for stitching temporary visitor identities when strict recognition fails. Lower is stricter. |
+| `min_face_size_px` | `52` | Minimum detected face width and height after frame resizing. Larger values reject distant or noisy face detections. |
+| `min_face_area_ratio` | `0.006` | Minimum face-box area as a fraction of the processed frame. |
+| `min_person_area_ratio` | `0.015` | Minimum person-box area as a fraction of the processed frame. |
+| `max_person_area_ratio` | `0.70` | Maximum person-box area as a fraction of the processed frame. This rejects full-frame duplicate detections. |
 | `unknown_face_label` | `unknown` | Legacy internal label for unknown-face events. |
 
 ## Work Profiles
@@ -40,4 +45,3 @@ The Settings page supports:
 - `Conservative`: slower confirmation and stricter recognition behavior.
 
 Profiles update related monitoring fields, but you can still override individual values before saving.
-

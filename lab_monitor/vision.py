@@ -67,12 +67,22 @@ class PersonDetector:
 
 
 class FaceService:
-    def __init__(self, faces_dir: Path, enrolled_dir: Path, threshold: float) -> None:
+    def __init__(
+        self,
+        faces_dir: Path,
+        enrolled_dir: Path,
+        threshold: float,
+        *,
+        min_face_size_px: int = 52,
+        min_face_area_ratio: float = 0.006,
+    ) -> None:
         cv2 = load_cv2()
         self.cv2 = cv2
         self.faces_dir = faces_dir
         self.enrolled_dir = enrolled_dir
         self.threshold = threshold
+        self.min_face_size_px = min_face_size_px
+        self.min_face_area_ratio = min_face_area_ratio
         self.faces_dir.mkdir(parents=True, exist_ok=True)
         self.enrolled_dir.mkdir(parents=True, exist_ok=True)
         cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
@@ -96,17 +106,32 @@ class FaceService:
             gray,
             scaleFactor=1.1,
             minNeighbors=5,
-            minSize=(40, 40),
+            minSize=(self.min_face_size_px, self.min_face_size_px),
         )
-        return [tuple(map(int, face)) for face in faces]
+        return [
+            tuple(map(int, face))
+            for face in faces
+            if is_face_box_usable(
+                tuple(map(int, face)),
+                frame.shape,
+                min_size_px=self.min_face_size_px,
+                min_area_ratio=self.min_face_area_ratio,
+            )
+        ]
 
-    def recognize_face(self, frame: np.ndarray, face_box: BBox) -> tuple[str | None, float | None]:
+    def recognize_face(
+        self,
+        frame: np.ndarray,
+        face_box: BBox,
+        threshold: float | None = None,
+    ) -> tuple[str | None, float | None]:
         if not self.can_recognize or self._recognizer is None:
             return None, None
         gray_face = self._prepare_face(frame, face_box)
         label_id, distance = self._recognizer.predict(gray_face)
         name = self._labels.get(str(label_id))
-        if name and float(distance) <= self.threshold:
+        max_distance = self.threshold if threshold is None else threshold
+        if name and float(distance) <= max_distance:
             return name, float(distance)
         return None, float(distance)
 
@@ -246,6 +271,43 @@ def face_inside_person(face: BBox, person: BBox) -> bool:
     cx = fx + fw / 2
     cy = fy + fh / 2
     return px <= cx <= px + pw and py <= cy <= py + ph
+
+
+def box_area_ratio(box: BBox, frame_shape: tuple[int, ...]) -> float:
+    height, width = frame_shape[:2]
+    _x, _y, w, h = clamp_box(box, width, height)
+    frame_area = width * height
+    return (w * h / frame_area) if frame_area else 0.0
+
+
+def is_face_box_usable(
+    box: BBox,
+    frame_shape: tuple[int, ...],
+    *,
+    min_size_px: int = 52,
+    min_area_ratio: float = 0.006,
+) -> bool:
+    height, width = frame_shape[:2]
+    x, y, w, h = clamp_box(box, width, height)
+    if w < min_size_px or h < min_size_px:
+        return False
+    aspect = w / h if h else 0.0
+    if aspect < 0.72 or aspect > 1.38:
+        return False
+    if box_area_ratio((x, y, w, h), frame_shape) < min_area_ratio:
+        return False
+    return True
+
+
+def is_person_box_usable(
+    box: BBox,
+    frame_shape: tuple[int, ...],
+    *,
+    min_area_ratio: float = 0.015,
+    max_area_ratio: float = 0.70,
+) -> bool:
+    ratio = box_area_ratio(box, frame_shape)
+    return min_area_ratio <= ratio <= max_area_ratio
 
 
 def person_box_from_face(face: BBox, frame_width: int, frame_height: int) -> BBox:

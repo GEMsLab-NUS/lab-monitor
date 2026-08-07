@@ -14,5 +14,10 @@
   "web_host": "127.0.0.1",
   "web_port": 8765,
   "face_recognition_threshold": 75.0,
+  "face_soft_match_threshold": 115.0,
+  "min_face_size_px": 52,
+  "min_face_area_ratio": 0.006,
+  "min_person_area_ratio": 0.015,
+  "max_person_area_ratio": 0.7,
   "unknown_face_label": "unknown"
 }

@@ -23,6 +23,11 @@ class AppConfig:
     web_host: str = "127.0.0.1"
     web_port: int = 8765
     face_recognition_threshold: float = 75.0
+    face_soft_match_threshold: float = 115.0
+    min_face_size_px: int = 52
+    min_face_area_ratio: float = 0.006
+    min_person_area_ratio: float = 0.015
+    max_person_area_ratio: float = 0.70
     unknown_face_label: str = "unknown"
 
     @property
@@ -57,6 +62,11 @@ CONFIG_FIELDS: dict[str, dict[str, Any]] = {
     "stationary_seconds": {"type": int, "min": 5, "max": 7200, "group": "Monitoring behavior"},
     "max_tracking_distance_px": {"type": int, "min": 10, "max": 1000, "group": "Monitoring behavior"},
     "face_recognition_threshold": {"type": float, "min": 1.0, "max": 300.0, "group": "Identity recognition"},
+    "face_soft_match_threshold": {"type": float, "min": 1.0, "max": 300.0, "group": "Identity recognition"},
+    "min_face_size_px": {"type": int, "min": 20, "max": 300, "group": "Identity recognition"},
+    "min_face_area_ratio": {"type": float, "min": 0.0005, "max": 0.25, "group": "Identity recognition"},
+    "min_person_area_ratio": {"type": float, "min": 0.0005, "max": 0.80, "group": "Monitoring behavior"},
+    "max_person_area_ratio": {"type": float, "min": 0.05, "max": 1.0, "group": "Monitoring behavior"},
     "unknown_identity_prefix": {"type": str, "min_length": 1, "max_length": 40, "group": "Identity recognition"},
     "snapshot_retention_days": {"type": int, "min": 1, "max": 3650, "group": "Retention"},
     "log_retention_days": {"type": int, "min": 1, "max": 3650, "group": "Retention"},
@@ -73,6 +83,11 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "stationary_seconds": 120,
         "max_tracking_distance_px": 120,
         "face_recognition_threshold": 75.0,
+        "face_soft_match_threshold": 115.0,
+        "min_face_size_px": 52,
+        "min_face_area_ratio": 0.006,
+        "min_person_area_ratio": 0.015,
+        "max_person_area_ratio": 0.70,
     },
     "Responsive": {
         "min_dwell_seconds": 20,
@@ -81,6 +96,11 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "stationary_seconds": 60,
         "max_tracking_distance_px": 160,
         "face_recognition_threshold": 85.0,
+        "face_soft_match_threshold": 125.0,
+        "min_face_size_px": 48,
+        "min_face_area_ratio": 0.004,
+        "min_person_area_ratio": 0.010,
+        "max_person_area_ratio": 0.78,
     },
     "Conservative": {
         "min_dwell_seconds": 120,
@@ -89,6 +109,11 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "stationary_seconds": 240,
         "max_tracking_distance_px": 90,
         "face_recognition_threshold": 60.0,
+        "face_soft_match_threshold": 90.0,
+        "min_face_size_px": 72,
+        "min_face_area_ratio": 0.010,
+        "min_person_area_ratio": 0.025,
+        "max_person_area_ratio": 0.55,
     },
 }
 

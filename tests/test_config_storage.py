@@ -155,6 +155,32 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(session.identity_name, "Alice")
             store.close()
 
+    def test_rename_identity_can_consolidate_adjacent_sessions(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))
+            first = store.upsert_session(
+                "Visitor 007",
+                track_id=1,
+                merge_gap_minutes=15,
+                ts="2026-08-04T10:00:00+00:00",
+            )
+            store.update_session(first, ts="2026-08-04T10:05:00+00:00")
+            store.upsert_session(
+                "Visitor 008",
+                track_id=2,
+                merge_gap_minutes=15,
+                ts="2026-08-04T10:20:00+00:00",
+            )
+
+            store.rename_identity("Visitor 008", "Visitor 007", merge_gap_minutes=45)
+
+            sessions = store.list_sessions()
+            self.assertEqual(len(sessions), 1)
+            self.assertEqual(sessions[0].identity_name, "Visitor 007")
+            self.assertEqual(sessions[0].start_ts, "2026-08-04T10:00:00+00:00")
+            self.assertEqual(sessions[0].last_seen_ts, "2026-08-04T10:20:00+00:00")
+            store.close()
+
     def test_export_csv_includes_session_headers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))

@@ -174,7 +174,7 @@ class EventStore:
         )
         self._conn.commit()
 
-    def rename_identity(self, old_name: str, new_name: str) -> None:
+    def rename_identity(self, old_name: str, new_name: str, merge_gap_minutes: int | None = None) -> None:
         if not old_name or not new_name:
             raise ValueError("Both old and new names are required.")
         old_name = old_name.strip()
@@ -244,6 +244,82 @@ class EventStore:
                 (canonical_old_name, new_name, now, now),
             )
         self._conn.commit()
+        if merge_gap_minutes is not None:
+            self.consolidate_sessions(new_name, merge_gap_minutes)
+
+    def consolidate_sessions(self, identity_name: str, merge_gap_minutes: int) -> int:
+        identity_name = self.resolve_identity(identity_name)
+        rows = self._conn.execute(
+            """
+            SELECT * FROM sessions
+            WHERE identity_name = ?
+            ORDER BY start_ts ASC, id ASC
+            """,
+            (identity_name,),
+        ).fetchall()
+        if len(rows) < 2:
+            return 0
+
+        merged_count = 0
+        current = dict(rows[0])
+        for row in rows[1:]:
+            candidate = dict(row)
+            current_last = datetime.fromisoformat(str(current["last_seen_ts"]))
+            candidate_start = datetime.fromisoformat(str(candidate["start_ts"]))
+            if candidate_start <= current_last + timedelta(minutes=merge_gap_minutes):
+                current = self._merge_session_rows(current, candidate)
+                merged_count += 1
+                continue
+            self._write_merged_session(current)
+            current = candidate
+        self._write_merged_session(current)
+        self._conn.commit()
+        return merged_count
+
+    def _merge_session_rows(self, current: dict[str, Any], candidate: dict[str, Any]) -> dict[str, Any]:
+        current_end = datetime.fromisoformat(str(current["end_ts"]))
+        candidate_end = datetime.fromisoformat(str(candidate["end_ts"]))
+        current_last = datetime.fromisoformat(str(current["last_seen_ts"]))
+        candidate_last = datetime.fromisoformat(str(candidate["last_seen_ts"]))
+        current_details = json.loads(current["details_json"] or "{}")
+        candidate_details = json.loads(candidate["details_json"] or "{}")
+        merged_ids = list(current_details.get("merged_session_ids", []))
+        merged_ids.append(candidate["id"])
+        current_details.update({f"merged_{candidate['id']}": candidate_details})
+        current_details["merged_session_ids"] = merged_ids
+        current_confidence = current["confidence"]
+        candidate_confidence = candidate["confidence"]
+        confidences = [
+            float(value)
+            for value in (current_confidence, candidate_confidence)
+            if value is not None
+        ]
+        self._conn.execute("DELETE FROM sessions WHERE id = ?", (candidate["id"],))
+        current["end_ts"] = max(current_end, candidate_end).isoformat(timespec="seconds")
+        current["last_seen_ts"] = max(current_last, candidate_last).isoformat(timespec="seconds")
+        current["confidence"] = min(confidences) if confidences else None
+        current["snapshot_path"] = current["snapshot_path"] or candidate["snapshot_path"]
+        current["details_json"] = json.dumps(current_details, ensure_ascii=True)
+        return current
+
+    def _write_merged_session(self, row: dict[str, Any]) -> None:
+        self._conn.execute(
+            """
+            UPDATE sessions
+            SET start_ts = ?, end_ts = ?, last_seen_ts = ?,
+                confidence = ?, snapshot_path = ?, details_json = ?
+            WHERE id = ?
+            """,
+            (
+                row["start_ts"],
+                row["end_ts"],
+                row["last_seen_ts"],
+                row["confidence"],
+                row["snapshot_path"],
+                row["details_json"],
+                row["id"],
+            ),
+        )
 
     def upsert_session(
         self,
