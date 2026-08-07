@@ -66,13 +66,42 @@ Dashboard:
 http://127.0.0.1:8765
 ```
 
-## Update
+## Update Existing Deployment
 
 ```powershell
 cd lab-monitor
 git pull
 .\scripts\deploy-windows.ps1
 ```
+
+The update path is designed to keep existing local data:
+
+- `data/` is ignored by git and is not touched by `git pull`.
+- `config.json` is ignored by git and is not overwritten by `deploy-windows.ps1`.
+- The SQLite database at `data/lab_monitor.sqlite3` is reused in place.
+- New database tables and indexes are created automatically on startup when needed.
+- New config fields are filled from application defaults if they are missing from an older `config.json`.
+
+Recommended safe update with a database backup:
+
+```powershell
+cd lab-monitor
+.\scripts\stop-background.ps1
+Copy-Item .\data\lab_monitor.sqlite3 .\data\lab_monitor.backup.sqlite3
+git pull
+.\scripts\deploy-windows.ps1
+```
+
+To move an existing installation to another computer:
+
+1. Clone the repository on the new computer.
+2. Copy the old `data/` folder into the new repository root.
+3. Copy the old `config.json` into the new repository root if you want the same camera and dashboard settings.
+4. Run `.\scripts\deploy-windows.ps1`.
+
+Do not commit or upload `data/` or `config.json`; they may contain face snapshots, face models, identity aliases, and local device settings.
+
+If an old database already contains split visitor identities, use the `Roster` page after updating to merge temporary visitor names into the correct person. Adjacent sessions for the same identity are consolidated using `session_merge_gap_minutes`.
 
 ## Dashboard Pages
 
