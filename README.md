@@ -68,6 +68,32 @@ http://127.0.0.1:8765
 
 ## Update Existing Deployment
 
+For normal updates on a computer that already has Lab Monitor deployed, run the CMD wrapper from the repository root:
+
+```cmd
+update-lab-monitor.cmd
+```
+
+The wrapper calls `scripts\update-windows.ps1`, which checks GitHub first. If there is no new commit, it prints an up-to-date message and exits without stopping the service, backing up the database, or redeploying.
+
+When a new commit exists, the updater will:
+
+1. Verify it is running inside the cloned repository.
+2. Fetch the latest GitHub branch metadata.
+3. Stop if tracked local code changes would be overwritten.
+4. Stop the background service.
+5. Back up `data\lab_monitor.sqlite3` to `data\backups\lab_monitor.YYYYMMDD-HHMMSS.sqlite3`, including SQLite WAL/SHM sidecar files when present.
+6. Run `git pull --ff-only`.
+7. Run `scripts\deploy-windows.ps1` to sync dependencies, keep or create `config.json`, and restart the service.
+
+Equivalent PowerShell command:
+
+```powershell
+.\scripts\update-windows.ps1
+```
+
+Manual update:
+
 ```powershell
 cd lab-monitor
 git pull
