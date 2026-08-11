@@ -42,6 +42,8 @@ class RosterPerson:
     total_seconds: float
     last_seen_ts: str | None
     snapshot_url: str | None
+    best_confidence: float | None
+    face_score: int
 
 
 DASHBOARD_CSS = """
@@ -309,7 +311,7 @@ a { color: inherit; }
 .roster-list { display: grid; gap: 10px; }
 .roster-row {
   display: grid;
-  grid-template-columns: 58px minmax(180px, 1.2fr) repeat(3, minmax(92px, .5fr)) minmax(260px, 1fr);
+  grid-template-columns: 58px minmax(180px, 1.1fr) repeat(4, minmax(84px, .45fr)) minmax(240px, 1fr) 78px;
   gap: 12px;
   align-items: center;
   padding: 12px;
@@ -327,6 +329,7 @@ a { color: inherit; }
 .roster-form { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; }
 .roster-form input { min-width: 0; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-subtle); color: var(--text); }
 .roster-form button { min-height: 36px; border: 1px solid var(--line); border-radius: 7px; background: var(--accent); color: #fff; font-weight: 650; }
+.roster-delete-form button { width: 100%; min-height: 36px; border: 1px solid var(--danger); border-radius: 7px; background: var(--danger-soft); color: var(--danger); font-weight: 650; }
 @media (max-width: 1080px) {
   .topbar { height: auto; min-height: 68px; align-items: stretch; flex-direction: column; padding: 12px; }
   .brand { min-width: 0; }
@@ -334,7 +337,7 @@ a { color: inherit; }
   .toolbar-title { order: -1; flex-basis: 100%; text-align: left; }
   .layout, .dashboard-grid, .form-grid { grid-template-columns: 1fr; padding: 12px; }
   .roster-row { grid-template-columns: 58px minmax(0, 1fr); }
-  .roster-stat, .roster-form { grid-column: 2; }
+  .roster-stat, .roster-form, .roster-delete-form { grid-column: 2; }
   .calendar-scroll { max-height: none; }
 }
 @media (max-width: 620px) {
@@ -626,6 +629,30 @@ class DashboardServer:
                     else:
                         self._redirect(f"/calendar?{urlencode({'view': view, 'date': selected})}")
                     return
+                if parsed.path == "/api/identity/delete":
+                    name = data.get("name", [""])[0].strip()
+                    return_to = data.get("return_to", ["/roster?deleted=1"])[0].strip()
+                    if name:
+                        delete_result = store.delete_identity(name)
+                        names_to_delete = delete_result.get("names", [name])
+                        if monitor is not None:
+                            for item in names_to_delete:
+                                monitor.delete_identity(str(item))
+                        else:
+                            face_service = FaceService(
+                                runtime_config.faces_path,
+                                runtime_config.enrolled_faces_path,
+                                runtime_config.face_recognition_threshold,
+                                min_face_size_px=runtime_config.min_face_size_px,
+                                min_face_area_ratio=runtime_config.min_face_area_ratio,
+                            )
+                            for item in names_to_delete:
+                                face_service.delete_label(str(item))
+                    if return_to.startswith("/") and not return_to.startswith("//"):
+                        self._redirect(return_to)
+                    else:
+                        self._redirect("/roster?deleted=1")
+                    return
                 if parsed.path == "/api/settings":
                     flat = {key: values[0] for key, values in data.items()}
                     profile = flat.pop("profile", "")
@@ -748,6 +775,8 @@ def render_roster_page(
     notice = ""
     if query and query.get("saved", [""])[0] == "1":
         notice = '<div class="notice success">Roster updated.</div>'
+    if query and query.get("deleted", [""])[0] == "1":
+        notice = '<div class="notice success">Roster entry deleted.</div>'
     rows = "".join(render_roster_row(person) for person in people)
     if not rows:
         rows = '<div class="empty">No identities yet.</div>'
@@ -1060,13 +1089,15 @@ def build_roster_people(store: EventStore, config: AppConfig) -> list[RosterPers
                 total_seconds=sum(duration_seconds(session) for session in person_sessions),
                 last_seen_ts=latest_session.last_seen_ts if latest_session else None,
                 snapshot_url=snapshot_url,
+                best_confidence=best_face_distance(person_sessions),
+                face_score=face_evidence_score(person_sessions),
             )
         )
 
-    def sort_key(person: RosterPerson) -> tuple[int, str, str]:
-        visitor_rank = 0 if person.name.startswith(config.unknown_identity_prefix) else 1
+    def sort_key(person: RosterPerson) -> tuple[int, int, float, str, int]:
+        known_rank = 1 if not person.name.startswith(config.unknown_identity_prefix) else 0
         last_seen = person.last_seen_ts or ""
-        return (visitor_rank, "" if last_seen else "1", last_seen)
+        return (person.face_score, len(person.sessions), person.total_seconds, last_seen, known_rank)
 
     return sorted(people, key=sort_key, reverse=True)
 
@@ -1091,6 +1122,7 @@ def render_roster_row(person: RosterPerson) -> str:
         </div>
         <div class="roster-stat"><span>Sessions</span><strong>{len(person.sessions)}</strong></div>
         <div class="roster-stat"><span>Total time</span><strong>{escape(format_duration(person.total_seconds))}</strong></div>
+        <div class="roster-stat"><span>Face evidence</span><strong>{person.face_score}%</strong></div>
         <div class="roster-stat"><span>Last seen</span><strong>{escape(last_seen)}</strong></div>
         <form class="roster-form" method="post" action="/api/identity/rename">
           <input type="hidden" name="old_name" value="{escape(person.name)}">
@@ -1098,8 +1130,25 @@ def render_roster_row(person: RosterPerson) -> str:
           <input name="new_name" list="identity-options" value="{escape(person.name)}" aria-label="Rename {escape(person.name)}">
           <button type="submit">Rename</button>
         </form>
+        <form class="roster-delete-form" method="post" action="/api/identity/delete" onsubmit="return confirm('Delete this roster entry and all related sessions?');">
+          <input type="hidden" name="name" value="{escape(person.name)}">
+          <input type="hidden" name="return_to" value="/roster?deleted=1">
+          <button type="submit">Delete</button>
+        </form>
       </article>
     """
+
+
+def best_face_distance(sessions: list[Session]) -> float | None:
+    distances = [float(session.confidence) for session in sessions if session.confidence is not None]
+    return min(distances) if distances else None
+
+
+def face_evidence_score(sessions: list[Session]) -> int:
+    best = best_face_distance(sessions)
+    if best is None:
+        return 0
+    return max(1, min(100, int(round(100 * (1 - min(best, 140.0) / 140.0)))))
 
 
 def render_settings_groups(config: AppConfig) -> str:

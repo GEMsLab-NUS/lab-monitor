@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 from typing import Any
 
 import numpy as np
@@ -181,6 +182,24 @@ class FaceService:
             self._save_labels()
         return renamed
 
+    def delete_label(self, name: str) -> int:
+        deleted = 0
+        for raw_id, existing in list(self._labels.items()):
+            if existing != name:
+                continue
+            del self._labels[raw_id]
+            target_dir = self.enrolled_dir / raw_id
+            if target_dir.exists():
+                shutil.rmtree(target_dir)
+            deleted += 1
+        if deleted:
+            self._save_labels()
+            self.retrain()
+        return deleted
+
+    def label_names(self) -> set[str]:
+        return set(self._labels.values())
+
     def enroll_from_camera(self, name: str, camera_index: int, samples: int = 20) -> int:
         cap = self.cv2.VideoCapture(camera_index)
         if not cap.isOpened():
@@ -224,6 +243,8 @@ class FaceService:
                 faces.append(face)
                 labels.append(label_id)
         if not faces:
+            if self.model_path.exists():
+                self.model_path.unlink()
             return 0
         self._recognizer.train(faces, np.array(labels, dtype=np.int32))
         self._recognizer.write(str(self.model_path))

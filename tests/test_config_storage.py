@@ -181,6 +181,59 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(sessions[0].last_seen_ts, "2026-08-04T10:20:00+00:00")
             store.close()
 
+    def test_delete_identity_removes_group_sessions_aliases_and_snapshots(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            store = EventStore(data_dir / "events.sqlite3", data_dir)
+            snapshot = data_dir / "snapshots" / "visitor.jpg"
+            snapshot.write_bytes(b"fake")
+            store.upsert_session(
+                "Visitor 001",
+                track_id=1,
+                merge_gap_minutes=15,
+                snapshot_path="snapshots/visitor.jpg",
+            )
+            store.rename_identity("Visitor 001", "Alice")
+
+            result = store.delete_identity("Alice")
+
+            self.assertEqual(result["deleted_sessions"], 1)
+            self.assertFalse(snapshot.exists())
+            self.assertEqual(store.list_sessions(), [])
+            self.assertNotIn("Alice", store.list_identity_names())
+            self.assertEqual(store.list_identity_aliases(), {})
+            store.close()
+
+    def test_cleanup_roster_removes_orphan_and_low_evidence_visitors(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))
+            store.ensure_identity("Visitor 001")
+            store.upsert_session(
+                "Visitor 002",
+                track_id=1,
+                merge_gap_minutes=15,
+                ts="2026-08-04T10:00:00+00:00",
+            )
+            store.update_session(
+                1,
+                ts="2026-08-04T10:00:05+00:00",
+            )
+            store.upsert_session(
+                "Visitor 003",
+                track_id=2,
+                merge_gap_minutes=15,
+                confidence=65.0,
+                ts="2026-08-04T11:00:00+00:00",
+            )
+
+            result = store.cleanup_roster(include_low_evidence=True, min_total_seconds=20)
+
+            self.assertIn("Visitor 001", result["names"])
+            self.assertIn("Visitor 002", result["names"])
+            self.assertIn("Visitor 003", store.list_identity_names())
+            self.assertEqual(len(store.list_sessions()), 1)
+            store.close()
+
     def test_export_csv_includes_session_headers(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))

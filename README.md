@@ -60,6 +60,12 @@ Stop background service:
 .\scripts\stop-background.ps1
 ```
 
+Clean invalid roster/head records:
+
+```cmd
+clean-head-data.cmd
+```
+
 Dashboard:
 
 ```text
@@ -132,10 +138,37 @@ If an old database already contains split visitor identities, use the `Roster` p
 ## Dashboard Pages
 
 - `Calendar`: month, week, and day session views.
-- `Roster`: people list for renaming visitors and merging temporary visitor labels into existing identities.
+- `Roster`: people list for renaming, deleting, and merging temporary visitor labels into existing identities. Entries are sorted by face evidence so stronger face matches appear first.
 - `Analytics`: occupied hours, unique identities, peak hours, top identities, identity mix, and dwell distribution.
 - `Export`: filtered CSV and JSON session exports.
 - `Settings`: editable basic parameters and work profiles. Saving settings writes `config.json` and requires a service restart.
+
+## Roster Cleanup
+
+Use the `Roster` page to manually remove invalid visitor/head records. The `Delete` button removes the roster entry, its sessions, aliases, retained snapshots, and any matching enrolled face label.
+
+For bulk cleanup on a deployed computer, run:
+
+```cmd
+clean-head-data.cmd
+```
+
+To preview the cleanup without changing data:
+
+```powershell
+.\scripts\clean-head-data.ps1 -DryRun
+```
+
+The cleanup command:
+
+- Stops the background service.
+- Backs up `data\lab_monitor.sqlite3` to `data\backups\lab_monitor.before-head-clean.YYYYMMDD-HHMMSS.sqlite3`.
+- Removes orphan temporary visitors with no sessions.
+- Removes very short temporary visitor sessions without face evidence.
+- Removes matching temporary face labels from the local face model.
+- Restarts the background service.
+
+The default low-evidence cutoff is 20 seconds. Known renamed people and visitor entries with face evidence are kept.
 
 ## Face Enrollment
 

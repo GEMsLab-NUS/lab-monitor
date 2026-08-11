@@ -64,6 +64,13 @@ class CameraMonitor:
                     self.store.update_session(track.session_id, identity_name=new_name)
         return renamed
 
+    def delete_identity(self, name: str) -> int:
+        deleted = self._face_service.delete_label(name)
+        for track in self._tracker.tracks.values():
+            if track.last_name == name:
+                track.last_name = None
+        return deleted
+
     def stop(self) -> None:
         self._running = False
 

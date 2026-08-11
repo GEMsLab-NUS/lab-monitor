@@ -16,6 +16,12 @@ def iso_now() -> str:
     return utc_now().isoformat(timespec="seconds")
 
 
+def duration_seconds_for_session(session: "Session") -> float:
+    start = datetime.fromisoformat(session.start_ts)
+    end = datetime.fromisoformat(session.end_ts)
+    return max(0.0, (end - start).total_seconds())
+
+
 @dataclass(slots=True)
 class Event:
     id: int
@@ -246,6 +252,97 @@ class EventStore:
         self._conn.commit()
         if merge_gap_minutes is not None:
             self.consolidate_sessions(new_name, merge_gap_minutes)
+
+    def delete_identity(self, name: str, *, delete_snapshots: bool = True) -> dict[str, Any]:
+        canonical = self.resolve_identity(name.strip())
+        if not canonical:
+            raise ValueError("Identity name is required.")
+        aliases = self.list_identity_aliases()
+        group_names = {
+            raw_name
+            for raw_name in self.list_identity_names()
+            if self.resolve_identity(raw_name) == canonical
+        }
+        group_names.update(
+            old_name for old_name, new_name in aliases.items() if self.resolve_identity(new_name) == canonical
+        )
+        group_names.add(canonical)
+        ordered_names = sorted(group_names)
+        placeholders = ",".join("?" for _ in ordered_names)
+
+        snapshot_rows = self._conn.execute(
+            f"SELECT snapshot_path FROM sessions WHERE identity_name IN ({placeholders}) AND snapshot_path IS NOT NULL",
+            ordered_names,
+        ).fetchall()
+        deleted_snapshots = 0
+        if delete_snapshots:
+            for row in snapshot_rows:
+                if self._delete_snapshot_file(row["snapshot_path"]):
+                    deleted_snapshots += 1
+
+        session_count = self._conn.execute(
+            f"SELECT COUNT(*) AS n FROM sessions WHERE identity_name IN ({placeholders})",
+            ordered_names,
+        ).fetchone()["n"]
+        identity_count = self._conn.execute(
+            f"SELECT COUNT(*) AS n FROM identities WHERE name IN ({placeholders})",
+            ordered_names,
+        ).fetchone()["n"]
+
+        self._conn.execute(f"DELETE FROM sessions WHERE identity_name IN ({placeholders})", ordered_names)
+        self._conn.execute(
+            f"UPDATE events SET person_name = NULL WHERE person_name IN ({placeholders})",
+            ordered_names,
+        )
+        self._conn.execute(
+            f"DELETE FROM identity_aliases WHERE old_name IN ({placeholders}) OR new_name IN ({placeholders})",
+            ordered_names + ordered_names,
+        )
+        self._conn.execute(f"DELETE FROM identities WHERE name IN ({placeholders})", ordered_names)
+        self._conn.commit()
+        return {
+            "deleted_identities": identity_count,
+            "deleted_sessions": session_count,
+            "deleted_snapshots": deleted_snapshots,
+            "names": ordered_names,
+        }
+
+    def cleanup_roster(
+        self,
+        *,
+        unknown_prefix: str = "Visitor",
+        include_low_evidence: bool = False,
+        min_total_seconds: float = 20.0,
+    ) -> dict[str, Any]:
+        sessions = self.list_sessions(5000)
+        aliases = self.list_identity_aliases()
+        sessions_by_name: dict[str, list[Session]] = {}
+        for session in sessions:
+            sessions_by_name.setdefault(self.resolve_identity(session.identity_name), []).append(session)
+
+        deleted: list[dict[str, Any]] = []
+        for raw_name in self.list_identity_names():
+            canonical = self.resolve_identity(raw_name)
+            if canonical != raw_name or not canonical.startswith(unknown_prefix):
+                continue
+            person_sessions = sessions_by_name.get(canonical, [])
+            alias_count = sum(1 for new_name in aliases.values() if self.resolve_identity(new_name) == canonical)
+            if not person_sessions and alias_count == 0:
+                deleted.append(self.delete_identity(canonical))
+                continue
+            if include_low_evidence and alias_count == 0:
+                total_seconds = sum(duration_seconds_for_session(session) for session in person_sessions)
+                has_face_evidence = any(session.confidence is not None for session in person_sessions)
+                if person_sessions and not has_face_evidence and total_seconds <= min_total_seconds:
+                    deleted.append(self.delete_identity(canonical))
+
+        return {
+            "deleted_people": len(deleted),
+            "deleted_identities": sum(int(item["deleted_identities"]) for item in deleted),
+            "deleted_sessions": sum(int(item["deleted_sessions"]) for item in deleted),
+            "deleted_snapshots": sum(int(item["deleted_snapshots"]) for item in deleted),
+            "names": [name for item in deleted for name in item["names"]],
+        }
 
     def consolidate_sessions(self, identity_name: str, merge_gap_minutes: int) -> int:
         identity_name = self.resolve_identity(identity_name)
