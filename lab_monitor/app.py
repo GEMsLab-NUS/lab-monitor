@@ -45,6 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     clean_roster = sub.add_parser("clean-roster", help="Remove invalid temporary visitor identities.")
     clean_roster.add_argument("--include-low-evidence", action="store_true", help="Also delete short visitor sessions without face evidence.")
+    clean_roster.add_argument("--delete-nonface-visitors", action="store_true", help="Also delete temporary visitors whose snapshots do not contain a verifiable face.")
     clean_roster.add_argument("--min-total-seconds", type=float, default=20.0, help="Low-evidence duration cutoff.")
     clean_roster.add_argument("--dry-run", action="store_true", help="Show what would be removed without deleting.")
     clean_roster.set_defaults(func=cmd_clean_roster)
@@ -139,7 +140,9 @@ def cmd_clean_roster(args: argparse.Namespace) -> int:
             store,
             config.unknown_identity_prefix,
             include_low_evidence=args.include_low_evidence,
+            delete_nonface_visitors=args.delete_nonface_visitors,
             min_total_seconds=args.min_total_seconds,
+            face_service=face_service,
         )
     else:
         result = store.cleanup_roster(
@@ -147,6 +150,15 @@ def cmd_clean_roster(args: argparse.Namespace) -> int:
             include_low_evidence=args.include_low_evidence,
             min_total_seconds=args.min_total_seconds,
         )
+        if args.delete_nonface_visitors:
+            nonface_names = find_nonface_visitor_names(store, config.unknown_identity_prefix, face_service)
+            for name in nonface_names:
+                deleted = store.delete_identity(name)
+                result["deleted_people"] += 1
+                result["deleted_identities"] += int(deleted["deleted_identities"])
+                result["deleted_sessions"] += int(deleted["deleted_sessions"])
+                result["deleted_snapshots"] += int(deleted["deleted_snapshots"])
+                result["names"].extend(str(item) for item in deleted["names"])
         for name in result["names"]:
             face_service.delete_label(str(name))
     store.close()
@@ -159,7 +171,9 @@ def preview_roster_cleanup(
     unknown_prefix: str,
     *,
     include_low_evidence: bool,
+    delete_nonface_visitors: bool = False,
     min_total_seconds: float,
+    face_service: FaceService | None = None,
 ) -> dict[str, object]:
     sessions = store.list_sessions(5000)
     aliases = store.list_identity_aliases()
@@ -181,7 +195,48 @@ def preview_roster_cleanup(
             has_face_evidence = any(item.confidence is not None for item in person_sessions)
             if person_sessions and not has_face_evidence and total_seconds <= min_total_seconds:
                 names.append(canonical)
+                continue
+        if delete_nonface_visitors and alias_count == 0 and person_sessions and face_service is not None:
+            if not any(session_snapshot_has_face(store, item, face_service) for item in person_sessions):
+                names.append(canonical)
     return {"dry_run": True, "deleted_people": len(names), "names": names}
+
+
+def find_nonface_visitor_names(
+    store: EventStore,
+    unknown_prefix: str,
+    face_service: FaceService,
+) -> list[str]:
+    aliases = store.list_identity_aliases()
+    sessions_by_name: dict[str, list[Session]] = {}
+    for session in store.list_sessions(5000):
+        sessions_by_name.setdefault(store.resolve_identity(session.identity_name), []).append(session)
+    names: list[str] = []
+    for raw_name in store.list_identity_names():
+        canonical = store.resolve_identity(raw_name)
+        if canonical != raw_name or not canonical.startswith(unknown_prefix):
+            continue
+        if any(store.resolve_identity(new_name) == canonical for new_name in aliases.values()):
+            continue
+        person_sessions = sessions_by_name.get(canonical, [])
+        if person_sessions and not any(session_snapshot_has_face(store, item, face_service) for item in person_sessions):
+            names.append(canonical)
+    return names
+
+
+def session_snapshot_has_face(store: EventStore, session: Session, face_service: FaceService) -> bool:
+    if not session.snapshot_path:
+        return False
+    file_path = (store.data_dir / session.snapshot_path).resolve()
+    try:
+        if not file_path.is_relative_to(store.snapshot_dir.resolve()):
+            return False
+    except ValueError:
+        return False
+    frame = face_service.cv2.imread(str(file_path))
+    if frame is None:
+        return False
+    return any(face_service.is_enrollable_face(frame, face) for face in face_service.detect_faces(frame))
 
 
 def cmd_enroll(args: argparse.Namespace) -> int:

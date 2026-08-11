@@ -323,6 +323,7 @@ a { color: inherit; }
   transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
 .roster-card:hover { transform: translateY(-2px); border-color: var(--line); box-shadow: var(--shadow-md); }
+.roster-card.removing { transform: scale(.98); opacity: 0; pointer-events: none; }
 .roster-media { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: var(--surface-subtle); border-bottom: 1px solid var(--line-soft); }
 .roster-photo { width: 100%; height: 100%; object-fit: cover; display: block; }
 .roster-avatar { width: 100%; height: 100%; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent-soft), var(--surface-subtle)); color: var(--accent); font-size: 44px; font-weight: 800; }
@@ -339,6 +340,7 @@ a { color: inherit; }
 .roster-form input { min-width: 0; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-subtle); color: var(--text); }
 .roster-form button { min-height: 36px; border: 1px solid var(--line); border-radius: 7px; background: var(--accent); color: #fff; font-weight: 650; }
 .roster-delete-form button { width: 100%; min-height: 34px; border: 1px solid var(--danger); border-radius: 7px; background: var(--danger-soft); color: var(--danger); font-weight: 650; cursor: pointer; }
+.roster-delete-form button:disabled { cursor: progress; opacity: .65; }
 .pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 4px; color: var(--muted); font-size: 13px; }
 .pager-links { display: flex; gap: 6px; flex-wrap: wrap; }
 .pager-links a, .pager-links span { min-width: 34px; min-height: 32px; display: inline-grid; place-items: center; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); text-decoration: none; background: var(--surface); }
@@ -481,6 +483,47 @@ DASHBOARD_JS = """
   } else {
     focusCurrentHour();
   }
+
+  const showRosterNotice = (text, type = 'success') => {
+    const body = document.querySelector('.content-body');
+    if (!body) return;
+    let notice = body.querySelector('.notice');
+    if (!notice) {
+      notice = document.createElement('div');
+      body.prepend(notice);
+    }
+    notice.className = `notice ${type}`;
+    notice.textContent = text;
+  };
+
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('.roster-delete-form');
+    if (!form) return;
+    event.preventDefault();
+    const button = form.querySelector('button');
+    const card = form.closest('.roster-card');
+    if (button) button.disabled = true;
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'fetch'
+        }
+      });
+      if (!response.ok) throw new Error(`Delete failed: ${response.status}`);
+      card?.classList.add('removing');
+      window.setTimeout(() => {
+        card?.remove();
+        const remaining = document.querySelectorAll('.roster-card').length;
+        if (!remaining) window.location.reload();
+      }, 180);
+      showRosterNotice('Roster entry deleted.');
+    } catch (error) {
+      form.submit();
+    }
+  });
 
   document.addEventListener('click', (event) => {
     const chip = event.target.closest('.session-chip[data-session-id]');
@@ -650,6 +693,7 @@ class DashboardServer:
                 if parsed.path == "/api/identity/delete":
                     name = data.get("name", [""])[0].strip()
                     return_to = data.get("return_to", ["/roster?deleted=1"])[0].strip()
+                    delete_result: dict[str, Any] = {"names": []}
                     if name:
                         delete_result = store.delete_identity(name)
                         names_to_delete = delete_result.get("names", [name])
@@ -669,6 +713,9 @@ class DashboardServer:
                             )
                             for item in names_to_delete:
                                 face_service.delete_label(str(item))
+                    if self._wants_json():
+                        self._send_json({"ok": True, "deleted": delete_result})
+                        return
                     if return_to.startswith("/") and not return_to.startswith("//"):
                         self._redirect(return_to)
                     else:
@@ -699,6 +746,11 @@ class DashboardServer:
 
             def _send_json(self, payload: Any) -> None:
                 self._send_text(json.dumps(payload, ensure_ascii=True), "application/json; charset=utf-8")
+
+            def _wants_json(self) -> bool:
+                accept = self.headers.get("Accept", "")
+                requested_with = self.headers.get("X-Requested-With", "")
+                return "application/json" in accept or requested_with.lower() == "fetch"
 
             def _send_download(self, body: str, content_type: str, filename: str) -> None:
                 data = body.encode("utf-8")
@@ -801,6 +853,7 @@ def render_roster_page(
     page = min(page, total_pages)
     start = (page - 1) * ROSTER_PAGE_SIZE
     page_people = active_people[start : start + ROSTER_PAGE_SIZE]
+    assign_roster_snapshots(page_people, store, config)
     visitor_count = len(unnamed_people)
     alias_count = sum(len(person.aliases) for person in people)
     names = sorted({person.name for person in people})
@@ -1116,11 +1169,6 @@ def build_roster_people(store: EventStore, config: AppConfig) -> list[RosterPers
             reverse=True,
         )
         latest_session = person_sessions[0] if person_sessions else None
-        snapshot_url = (
-            f"/session-snapshot/{latest_session.id}"
-            if latest_session is not None and latest_session.snapshot_path
-            else None
-        )
         people.append(
             RosterPerson(
                 name=name,
@@ -1128,7 +1176,7 @@ def build_roster_people(store: EventStore, config: AppConfig) -> list[RosterPers
                 sessions=person_sessions,
                 total_seconds=sum(duration_seconds(session) for session in person_sessions),
                 last_seen_ts=latest_session.last_seen_ts if latest_session else None,
-                snapshot_url=snapshot_url,
+                snapshot_url=None,
                 best_confidence=best_face_distance(person_sessions),
                 face_score=face_evidence_score(person_sessions),
             )
@@ -1140,6 +1188,60 @@ def build_roster_people(store: EventStore, config: AppConfig) -> list[RosterPers
         return (person.face_score, len(person.sessions), person.total_seconds, last_seen, known_rank)
 
     return sorted(people, key=sort_key, reverse=True)
+
+
+def assign_roster_snapshots(people: list[RosterPerson], store: EventStore, config: AppConfig) -> None:
+    if not people:
+        return
+    try:
+        face_service = FaceService(
+            config.faces_path,
+            config.enrolled_faces_path,
+            config.face_recognition_threshold,
+            min_face_size_px=config.min_face_size_px,
+            min_face_area_ratio=config.min_face_area_ratio,
+            min_sharpness=config.face_enrollment_min_sharpness,
+            min_brightness=config.face_enrollment_min_brightness,
+            max_brightness=config.face_enrollment_max_brightness,
+        )
+    except RuntimeError:
+        face_service = None
+    for person in people:
+        session = select_roster_snapshot_session(person.sessions, store, face_service)
+        person.snapshot_url = f"/session-snapshot/{session.id}" if session else None
+
+
+def select_roster_snapshot_session(
+    sessions: list[Session],
+    store: EventStore,
+    face_service: FaceService | None,
+) -> Session | None:
+    candidates = [session for session in sessions if session.snapshot_path]
+    candidates.sort(
+        key=lambda session: (
+            session.confidence is None,
+            float(session.confidence) if session.confidence is not None else 999.0,
+        )
+    )
+    for session in candidates:
+        if face_service is None or roster_snapshot_has_face(session, store, face_service):
+            return session
+    return None
+
+
+def roster_snapshot_has_face(session: Session, store: EventStore, face_service: FaceService) -> bool:
+    if not session.snapshot_path:
+        return False
+    file_path = (store.data_dir / session.snapshot_path).resolve()
+    try:
+        if not file_path.is_relative_to(store.snapshot_dir.resolve()):
+            return False
+    except ValueError:
+        return False
+    frame = face_service.cv2.imread(str(file_path))
+    if frame is None:
+        return False
+    return any(face_service.is_enrollable_face(frame, face) for face in face_service.detect_faces(frame))
 
 
 def render_roster_tabs(active: str, unnamed_count: int, named_count: int) -> str:
@@ -1193,11 +1295,12 @@ def render_roster_card(person: RosterPerson, saved_return: str, deleted_return: 
     if not aliases:
         aliases = '<span class="alias-chip">No aliases</span>'
     last_seen = format_ts_for_display(person.last_seen_ts) if person.last_seen_ts else "Never"
+    score_label = f"Face {person.face_score}%" if person.snapshot_url else "No verified face"
     return f"""
       <article class="roster-card">
         <div class="roster-media">
           {media}
-          <div class="roster-score">Face {person.face_score}%</div>
+          <div class="roster-score">{escape(score_label)}</div>
         </div>
         <div class="roster-card-body">
           <h3 class="roster-name">{escape(person.name)}</h3>

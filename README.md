@@ -167,6 +167,7 @@ The cleanup command:
 - Backs up `data\lab_monitor.sqlite3` to `data\backups\lab_monitor.before-head-clean.YYYYMMDD-HHMMSS.sqlite3`.
 - Removes orphan temporary visitors with no sessions.
 - Removes very short temporary visitor sessions without face evidence.
+- Removes temporary visitor records whose retained snapshots do not contain a verifiable face.
 - Removes matching temporary face labels from the local face model.
 - Restarts the background service.
 

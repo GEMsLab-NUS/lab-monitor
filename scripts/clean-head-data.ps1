@@ -17,7 +17,7 @@ $StartScript = Join-Path $PSScriptRoot "start-background.ps1"
 
 if ($DryRun) {
     Write-Host "Previewing invalid roster/head records. No service restart or database backup will be performed."
-    & $Uv run lab-monitor --config config.json clean-roster --dry-run --include-low-evidence --min-total-seconds 20
+    & $Uv run lab-monitor --config config.json clean-roster --dry-run --include-low-evidence --delete-nonface-visitors --min-total-seconds 20
     exit $LASTEXITCODE
 }
 
@@ -43,7 +43,7 @@ if (Test-Path $DatabasePath) {
 }
 
 Write-Host "Cleaning invalid roster/head records..."
-& $Uv run lab-monitor --config config.json clean-roster --include-low-evidence --min-total-seconds 20
+& $Uv run lab-monitor --config config.json clean-roster --include-low-evidence --delete-nonface-visitors --min-total-seconds 20
 
 Write-Host "Restarting background service..."
 & powershell -ExecutionPolicy Bypass -File $StartScript

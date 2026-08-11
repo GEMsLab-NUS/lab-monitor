@@ -6,6 +6,7 @@ import os
 from pathlib import Path
 import tempfile
 import unittest
+from unittest.mock import patch
 
 from lab_monitor.config import AppConfig, load_config, save_config_updates, validate_config_updates
 from lab_monitor.reporting import build_analytics, sessions_to_csv, sessions_to_json_payload
@@ -182,6 +183,21 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(sessions[0].last_seen_ts, "2026-08-04T10:20:00+00:00")
             store.close()
 
+    def test_update_session_can_replace_snapshot_with_later_face_crop(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))
+            session_id = store.upsert_session(
+                "Visitor 001",
+                track_id=1,
+                merge_gap_minutes=15,
+                snapshot_path="snapshots/body.jpg",
+            )
+
+            store.update_session(session_id, snapshot_path="snapshots/face.jpg")
+
+            self.assertEqual(store.list_sessions()[0].snapshot_path, "snapshots/face.jpg")
+            store.close()
+
     def test_delete_identity_removes_group_sessions_aliases_and_snapshots(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
@@ -283,7 +299,39 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(visitor_html.count('class="roster-card"'), 24)
             self.assertIn("Next", visitor_html)
             self.assertNotIn("confirm(", visitor_html)
+            self.assertIn("fetch(form.action", visitor_html)
             self.assertEqual(named_html.count('class="roster-card"'), 2)
+            store.close()
+
+    def test_roster_uses_first_snapshot_that_still_contains_face(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = AppConfig(data_dir=tmp)
+            store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))
+            bad_id = store.upsert_session(
+                "Visitor 001",
+                track_id=1,
+                merge_gap_minutes=0,
+                confidence=50.0,
+                snapshot_path="snapshots/instrument.jpg",
+                ts="2026-08-04T10:00:00+00:00",
+            )
+            good_id = store.upsert_session(
+                "Visitor 001",
+                track_id=2,
+                merge_gap_minutes=0,
+                confidence=60.0,
+                snapshot_path="snapshots/face.jpg",
+                ts="2026-08-04T11:00:00+00:00",
+            )
+
+            def fake_has_face(session, _store, _face_service) -> bool:  # type: ignore[no-untyped-def]
+                return session.id == good_id
+
+            with patch("lab_monitor.web.roster_snapshot_has_face", side_effect=fake_has_face):
+                html = render_roster_page(store, config, None, {"group": ["unnamed"]})
+
+            self.assertIn(f"/session-snapshot/{good_id}", html)
+            self.assertNotIn(f"/session-snapshot/{bad_id}", html)
             store.close()
 
     def test_analytics_handles_empty_and_populated_sessions(self) -> None:

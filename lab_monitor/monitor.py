@@ -202,7 +202,15 @@ class CameraMonitor:
             if name:
                 track.last_name = name
                 if track.session_id is not None:
-                    self.store.update_session(track.session_id, identity_name=name, confidence=confidence)
+                    snapshot_path = None
+                    if self._should_emit(track, f"face_snapshot:{track.session_id}", interval_seconds=300):
+                        snapshot_path = self._save_snapshot(frame, face, "face", track.id)
+                    self.store.update_session(
+                        track.session_id,
+                        identity_name=name,
+                        confidence=confidence,
+                        snapshot_path=snapshot_path,
+                    )
                 continue
             track.unknown_face_observations += 1
             if track.unknown_face_observations < self.config.min_unknown_face_observations:

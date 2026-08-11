@@ -452,7 +452,7 @@ class EventStore:
                 UPDATE sessions
                 SET end_ts = ?, last_seen_ts = ?, track_id = ?,
                     confidence = COALESCE(?, confidence),
-                    snapshot_path = COALESCE(snapshot_path, ?),
+                    snapshot_path = COALESCE(?, snapshot_path),
                     details_json = ?
                 WHERE id = ?
                 """,
@@ -513,7 +513,7 @@ class EventStore:
             UPDATE sessions
             SET identity_name = ?, end_ts = ?, last_seen_ts = ?,
                 confidence = COALESCE(?, confidence),
-                snapshot_path = COALESCE(snapshot_path, ?),
+                snapshot_path = COALESCE(?, snapshot_path),
                 details_json = ?
             WHERE id = ?
             """,
