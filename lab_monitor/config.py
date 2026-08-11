@@ -22,10 +22,14 @@ class AppConfig:
     max_tracking_distance_px: int = 120
     web_host: str = "127.0.0.1"
     web_port: int = 8765
-    face_recognition_threshold: float = 75.0
-    face_soft_match_threshold: float = 115.0
-    min_face_size_px: int = 52
-    min_face_area_ratio: float = 0.006
+    face_recognition_threshold: float = 62.0
+    face_soft_match_threshold: float = 90.0
+    min_face_size_px: int = 72
+    min_face_area_ratio: float = 0.012
+    min_unknown_face_observations: int = 4
+    face_enrollment_min_sharpness: float = 18.0
+    face_enrollment_min_brightness: float = 35.0
+    face_enrollment_max_brightness: float = 220.0
     min_person_area_ratio: float = 0.015
     max_person_area_ratio: float = 0.70
     unknown_face_label: str = "unknown"
@@ -65,6 +69,10 @@ CONFIG_FIELDS: dict[str, dict[str, Any]] = {
     "face_soft_match_threshold": {"type": float, "min": 1.0, "max": 300.0, "group": "Identity recognition"},
     "min_face_size_px": {"type": int, "min": 20, "max": 300, "group": "Identity recognition"},
     "min_face_area_ratio": {"type": float, "min": 0.0005, "max": 0.25, "group": "Identity recognition"},
+    "min_unknown_face_observations": {"type": int, "min": 1, "max": 30, "group": "Identity recognition"},
+    "face_enrollment_min_sharpness": {"type": float, "min": 0.0, "max": 500.0, "group": "Identity recognition"},
+    "face_enrollment_min_brightness": {"type": float, "min": 0.0, "max": 255.0, "group": "Identity recognition"},
+    "face_enrollment_max_brightness": {"type": float, "min": 0.0, "max": 255.0, "group": "Identity recognition"},
     "min_person_area_ratio": {"type": float, "min": 0.0005, "max": 0.80, "group": "Monitoring behavior"},
     "max_person_area_ratio": {"type": float, "min": 0.05, "max": 1.0, "group": "Monitoring behavior"},
     "unknown_identity_prefix": {"type": str, "min_length": 1, "max_length": 40, "group": "Identity recognition"},
@@ -82,10 +90,14 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "poll_interval_ms": 350,
         "stationary_seconds": 120,
         "max_tracking_distance_px": 120,
-        "face_recognition_threshold": 75.0,
-        "face_soft_match_threshold": 115.0,
-        "min_face_size_px": 52,
-        "min_face_area_ratio": 0.006,
+        "face_recognition_threshold": 62.0,
+        "face_soft_match_threshold": 90.0,
+        "min_face_size_px": 72,
+        "min_face_area_ratio": 0.012,
+        "min_unknown_face_observations": 4,
+        "face_enrollment_min_sharpness": 18.0,
+        "face_enrollment_min_brightness": 35.0,
+        "face_enrollment_max_brightness": 220.0,
         "min_person_area_ratio": 0.015,
         "max_person_area_ratio": 0.70,
     },
@@ -95,10 +107,14 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "poll_interval_ms": 180,
         "stationary_seconds": 60,
         "max_tracking_distance_px": 160,
-        "face_recognition_threshold": 85.0,
-        "face_soft_match_threshold": 125.0,
-        "min_face_size_px": 48,
-        "min_face_area_ratio": 0.004,
+        "face_recognition_threshold": 70.0,
+        "face_soft_match_threshold": 100.0,
+        "min_face_size_px": 64,
+        "min_face_area_ratio": 0.009,
+        "min_unknown_face_observations": 3,
+        "face_enrollment_min_sharpness": 14.0,
+        "face_enrollment_min_brightness": 30.0,
+        "face_enrollment_max_brightness": 230.0,
         "min_person_area_ratio": 0.010,
         "max_person_area_ratio": 0.78,
     },
@@ -108,10 +124,14 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "poll_interval_ms": 700,
         "stationary_seconds": 240,
         "max_tracking_distance_px": 90,
-        "face_recognition_threshold": 60.0,
-        "face_soft_match_threshold": 90.0,
-        "min_face_size_px": 72,
-        "min_face_area_ratio": 0.010,
+        "face_recognition_threshold": 55.0,
+        "face_soft_match_threshold": 80.0,
+        "min_face_size_px": 88,
+        "min_face_area_ratio": 0.016,
+        "min_unknown_face_observations": 6,
+        "face_enrollment_min_sharpness": 24.0,
+        "face_enrollment_min_brightness": 45.0,
+        "face_enrollment_max_brightness": 210.0,
         "min_person_area_ratio": 0.025,
         "max_person_area_ratio": 0.55,
     },
@@ -166,6 +186,10 @@ def validate_config_updates(values: dict[str, Any]) -> dict[str, Any]:
         updates[key] = value
     if errors:
         raise ValueError(" ".join(errors))
+    min_brightness = updates.get("face_enrollment_min_brightness")
+    max_brightness = updates.get("face_enrollment_max_brightness")
+    if min_brightness is not None and max_brightness is not None and min_brightness > max_brightness:
+        raise ValueError("face_enrollment_min_brightness must be less than or equal to face_enrollment_max_brightness.")
     return updates
 
 

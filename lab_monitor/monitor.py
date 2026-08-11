@@ -44,6 +44,9 @@ class CameraMonitor:
             config.face_recognition_threshold,
             min_face_size_px=config.min_face_size_px,
             min_face_area_ratio=config.min_face_area_ratio,
+            min_sharpness=config.face_enrollment_min_sharpness,
+            min_brightness=config.face_enrollment_min_brightness,
+            max_brightness=config.face_enrollment_max_brightness,
         )
 
     @property
@@ -111,7 +114,11 @@ class CameraMonitor:
                 max_area_ratio=self.config.max_person_area_ratio,
             )
         ]
-        face_boxes = self._face_service.detect_faces(frame)
+        face_boxes = [
+            face
+            for face in self._face_service.detect_faces(frame)
+            if self._face_service.is_enrollable_face(frame, face)
+        ]
 
         if not person_boxes and face_boxes:
             person_boxes = [person_box_from_face(face, width, height) for face in face_boxes]
@@ -197,6 +204,9 @@ class CameraMonitor:
                 if track.session_id is not None:
                     self.store.update_session(track.session_id, identity_name=name, confidence=confidence)
                 continue
+            track.unknown_face_observations += 1
+            if track.unknown_face_observations < self.config.min_unknown_face_observations:
+                continue
             if track.last_name is None:
                 track.last_name = self.store.allocate_identity(self.config.unknown_identity_prefix)
             else:
@@ -223,6 +233,9 @@ class CameraMonitor:
             name, confidence = self._identify_face(frame, face)
             if name:
                 return name, confidence, face
+            track.unknown_face_observations += 1
+            if track.unknown_face_observations < self.config.min_unknown_face_observations:
+                return None, confidence, None
             identity = (
                 self.store.resolve_identity(track.last_name)
                 if track.last_name

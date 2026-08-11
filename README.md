@@ -135,17 +135,19 @@ Do not commit or upload `data/` or `config.json`; they may contain face snapshot
 
 If an old database already contains split visitor identities, use the `Roster` page after updating to merge temporary visitor names into the correct person. Adjacent sessions for the same identity are consolidated using `session_merge_gap_minutes`.
 
+The root updater also ensures the monitor is running in background mode at the end of the command. If there is no GitHub update, it skips backup and redeploy work but still starts the background service when needed.
+
 ## Dashboard Pages
 
 - `Calendar`: month, week, and day session views.
-- `Roster`: people list for renaming, deleting, and merging temporary visitor labels into existing identities. Entries are sorted by face evidence so stronger face matches appear first.
+- `Roster`: paged card view for renaming, direct deletion, and merging temporary visitor labels into existing identities. It has separate tabs for unnamed visitors and named identities. Entries are sorted by face evidence so stronger face matches appear first.
 - `Analytics`: occupied hours, unique identities, peak hours, top identities, identity mix, and dwell distribution.
 - `Export`: filtered CSV and JSON session exports.
 - `Settings`: editable basic parameters and work profiles. Saving settings writes `config.json` and requires a service restart.
 
 ## Roster Cleanup
 
-Use the `Roster` page to manually remove invalid visitor/head records. The `Delete` button removes the roster entry, its sessions, aliases, retained snapshots, and any matching enrolled face label.
+Use the `Roster` page to manually remove invalid visitor/head records. The `Delete` button removes the roster entry, its sessions, aliases, retained snapshots, and any matching enrolled face label immediately.
 
 For bulk cleanup on a deployed computer, run:
 
@@ -169,6 +171,23 @@ The cleanup command:
 - Restarts the background service.
 
 The default low-evidence cutoff is 20 seconds. Known renamed people and visitor entries with face evidence are kept.
+
+## Recognition Filtering
+
+New installs use stricter defaults to reduce non-face visitor records:
+
+- `face_recognition_threshold`: lower is stricter for LBPH matching.
+- `face_soft_match_threshold`: lower is stricter for fallback matching.
+- `min_face_size_px` and `min_face_area_ratio`: reject small detections and distant false positives.
+- `min_unknown_face_observations`: require repeated high-quality unknown-face observations before creating a new visitor.
+- `face_enrollment_min_sharpness`, `face_enrollment_min_brightness`, `face_enrollment_max_brightness`: reject blurred, too-dark, or overexposed crops.
+
+Existing deployed machines keep their current `config.json`. To use the stricter profile after updating, open `Settings`, choose `Balanced` or `Conservative`, save, then restart with:
+
+```powershell
+.\scripts\stop-background.ps1
+.\scripts\start-background.ps1
+```
 
 ## Face Enrollment
 

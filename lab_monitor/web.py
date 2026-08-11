@@ -32,6 +32,7 @@ from .vision import FaceService
 
 
 WEEKDAY_LABELS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+ROSTER_PAGE_SIZE = 24
 
 
 @dataclass(slots=True)
@@ -308,41 +309,55 @@ a { color: inherit; }
 .notice { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-subtle); color: var(--muted); }
 .notice.success { border-color: var(--success); color: var(--success); background: var(--success-soft); }
 .notice.error { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
-.roster-list { display: grid; gap: 10px; }
-.roster-row {
-  display: grid;
-  grid-template-columns: 58px minmax(180px, 1.1fr) repeat(4, minmax(84px, .45fr)) minmax(240px, 1fr) 78px;
-  gap: 12px;
-  align-items: center;
-  padding: 12px;
+.roster-tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
+.roster-tabs a { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; border-radius: 7px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 650; }
+.roster-tabs a.active { color: var(--text); background: var(--surface); box-shadow: var(--shadow-sm); }
+.roster-tabs span { color: var(--faint); font-size: 12px; font-weight: 700; }
+.roster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 14px; }
+.roster-card {
+  overflow: hidden;
   border: 1px solid var(--line-soft);
   border-radius: 8px;
   background: var(--surface-raised);
+  box-shadow: var(--shadow-sm);
+  transition: transform .16s ease, box-shadow .16s ease, border-color .16s ease;
 }
-.roster-photo { width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--surface-subtle); border: 1px solid var(--line-soft); }
-.roster-avatar { width: 48px; height: 48px; display: grid; place-items: center; border-radius: 8px; background: var(--accent-soft); color: var(--accent); font-weight: 800; border: 1px solid var(--line-soft); }
-.roster-name { margin: 0; font-size: 14px; font-weight: 750; }
-.roster-aliases { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.roster-card:hover { transform: translateY(-2px); border-color: var(--line); box-shadow: var(--shadow-md); }
+.roster-media { position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: var(--surface-subtle); border-bottom: 1px solid var(--line-soft); }
+.roster-photo { width: 100%; height: 100%; object-fit: cover; display: block; }
+.roster-avatar { width: 100%; height: 100%; display: grid; place-items: center; background: linear-gradient(135deg, var(--accent-soft), var(--surface-subtle)); color: var(--accent); font-size: 44px; font-weight: 800; }
+.roster-score { position: absolute; left: 10px; bottom: 10px; padding: 5px 8px; border-radius: 999px; background: rgba(17, 24, 39, 0.72); color: #fff; font-size: 12px; font-weight: 750; backdrop-filter: blur(8px); }
+.roster-card-body { display: grid; gap: 12px; padding: 12px; }
+.roster-name { min-height: 20px; margin: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; font-weight: 760; }
+.roster-aliases { display: flex; flex-wrap: wrap; gap: 5px; min-height: 24px; }
 .alias-chip { max-width: 132px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 3px 7px; border: 1px solid var(--line-soft); border-radius: 999px; color: var(--muted); background: var(--surface-subtle); font-size: 11px; }
-.roster-stat span { display: block; color: var(--muted); font-size: 11px; }
-.roster-stat strong { display: block; margin-top: 4px; color: var(--text); font-size: 13px; font-weight: 700; }
-.roster-form { display: grid; grid-template-columns: minmax(0, 1fr) 82px; gap: 8px; }
+.roster-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; overflow: hidden; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--line-soft); }
+.roster-stat { min-width: 0; padding: 8px; background: var(--surface); }
+.roster-stat span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 11px; }
+.roster-stat strong { display: block; margin-top: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text); font-size: 13px; font-weight: 720; }
+.roster-form { display: grid; grid-template-columns: minmax(0, 1fr) 78px; gap: 8px; }
 .roster-form input { min-width: 0; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; background: var(--surface-subtle); color: var(--text); }
 .roster-form button { min-height: 36px; border: 1px solid var(--line); border-radius: 7px; background: var(--accent); color: #fff; font-weight: 650; }
-.roster-delete-form button { width: 100%; min-height: 36px; border: 1px solid var(--danger); border-radius: 7px; background: var(--danger-soft); color: var(--danger); font-weight: 650; }
+.roster-delete-form button { width: 100%; min-height: 34px; border: 1px solid var(--danger); border-radius: 7px; background: var(--danger-soft); color: var(--danger); font-weight: 650; cursor: pointer; }
+.pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; padding-top: 4px; color: var(--muted); font-size: 13px; }
+.pager-links { display: flex; gap: 6px; flex-wrap: wrap; }
+.pager-links a, .pager-links span { min-width: 34px; min-height: 32px; display: inline-grid; place-items: center; padding: 0 10px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); text-decoration: none; background: var(--surface); }
+.pager-links .active { color: #fff; border-color: var(--accent); background: var(--accent); }
 @media (max-width: 1080px) {
   .topbar { height: auto; min-height: 68px; align-items: stretch; flex-direction: column; padding: 12px; }
   .brand { min-width: 0; }
   .toolbar, .topnav { flex-wrap: wrap; }
   .toolbar-title { order: -1; flex-basis: 100%; text-align: left; }
   .layout, .dashboard-grid, .form-grid { grid-template-columns: 1fr; padding: 12px; }
-  .roster-row { grid-template-columns: 58px minmax(0, 1fr); }
-  .roster-stat, .roster-form, .roster-delete-form { grid-column: 2; }
+  .roster-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
   .calendar-scroll { max-height: none; }
 }
 @media (max-width: 620px) {
   .health-grid, .metric-grid, .field-grid { grid-template-columns: 1fr; }
   .status-pill { width: 100%; justify-content: center; }
+  .roster-grid { grid-template-columns: 1fr; }
+  .roster-tabs { width: 100%; }
+  .roster-tabs a { flex: 1; justify-content: center; }
 }
 """
 
@@ -623,6 +638,9 @@ class DashboardServer:
                                 runtime_config.face_recognition_threshold,
                                 min_face_size_px=runtime_config.min_face_size_px,
                                 min_face_area_ratio=runtime_config.min_face_area_ratio,
+                                min_sharpness=runtime_config.face_enrollment_min_sharpness,
+                                min_brightness=runtime_config.face_enrollment_min_brightness,
+                                max_brightness=runtime_config.face_enrollment_max_brightness,
                             ).rename_label(old_name, new_name)
                     if return_to.startswith("/") and not return_to.startswith("//"):
                         self._redirect(return_to)
@@ -645,6 +663,9 @@ class DashboardServer:
                                 runtime_config.face_recognition_threshold,
                                 min_face_size_px=runtime_config.min_face_size_px,
                                 min_face_area_ratio=runtime_config.min_face_area_ratio,
+                                min_sharpness=runtime_config.face_enrollment_min_sharpness,
+                                min_brightness=runtime_config.face_enrollment_min_brightness,
+                                max_brightness=runtime_config.face_enrollment_max_brightness,
                             )
                             for item in names_to_delete:
                                 face_service.delete_label(str(item))
@@ -767,27 +788,44 @@ def render_roster_page(
     monitor: CameraMonitor | None,
     query: dict[str, list[str]] | None = None,
 ) -> str:
+    query = query or {}
     people = build_roster_people(store, config)
-    visitor_count = sum(1 for person in people if person.name.startswith(config.unknown_identity_prefix))
+    unnamed_people = [person for person in people if is_unnamed_identity(person.name, config)]
+    named_people = [person for person in people if not is_unnamed_identity(person.name, config)]
+    group = query.get("group", ["unnamed"])[0]
+    if group not in {"unnamed", "named"}:
+        group = "unnamed"
+    active_people = unnamed_people if group == "unnamed" else named_people
+    page = parse_positive_int(query.get("page", ["1"])[0], default=1)
+    total_pages = max(1, (len(active_people) + ROSTER_PAGE_SIZE - 1) // ROSTER_PAGE_SIZE)
+    page = min(page, total_pages)
+    start = (page - 1) * ROSTER_PAGE_SIZE
+    page_people = active_people[start : start + ROSTER_PAGE_SIZE]
+    visitor_count = len(unnamed_people)
     alias_count = sum(len(person.aliases) for person in people)
     names = sorted({person.name for person in people})
     options = "".join(f'<option value="{escape(name)}"></option>' for name in names)
     notice = ""
-    if query and query.get("saved", [""])[0] == "1":
+    if query.get("saved", [""])[0] == "1":
         notice = '<div class="notice success">Roster updated.</div>'
-    if query and query.get("deleted", [""])[0] == "1":
+    if query.get("deleted", [""])[0] == "1":
         notice = '<div class="notice success">Roster entry deleted.</div>'
-    rows = "".join(render_roster_row(person) for person in people)
-    if not rows:
-        rows = '<div class="empty">No identities yet.</div>'
+    saved_return = f"/roster?{urlencode({'group': group, 'page': page, 'saved': '1'})}"
+    deleted_return = f"/roster?{urlencode({'group': group, 'page': page, 'deleted': '1'})}"
+    cards = "".join(render_roster_card(person, saved_return, deleted_return) for person in page_people)
+    if not cards:
+        cards = '<div class="empty">No identities on this page.</div>'
+    roster_tabs = render_roster_tabs(group, len(unnamed_people), len(named_people))
+    pager = render_roster_pager(group, page, total_pages, len(active_people))
+    active_label = "Unnamed visitors" if group == "unnamed" else "Named identities"
     main = f"""
       <main class="content-panel">
         <div class="content-head">
           <div>
             <h2>Roster</h2>
-            <div class="content-subtitle">People, visitor aliases, and merged identity records.</div>
+            <div class="content-subtitle">Review temporary visitors and maintain named identity records.</div>
           </div>
-          <div class="content-subtitle">{len(people)} people</div>
+          <div class="content-subtitle">{escape(active_label)} - page {page} of {total_pages}</div>
         </div>
         <div class="content-body">
           {notice}
@@ -798,7 +836,9 @@ def render_roster_page(
             <div class="metric"><span>Sessions</span><strong>{sum(len(person.sessions) for person in people)}</strong><small>Across roster</small></div>
           </div>
           <datalist id="identity-options">{options}</datalist>
-          <section class="roster-list">{rows}</section>
+          {roster_tabs}
+          <section class="roster-grid">{cards}</section>
+          {pager}
         </div>
       </main>
     """
@@ -1102,10 +1142,50 @@ def build_roster_people(store: EventStore, config: AppConfig) -> list[RosterPers
     return sorted(people, key=sort_key, reverse=True)
 
 
-def render_roster_row(person: RosterPerson) -> str:
+def render_roster_tabs(active: str, unnamed_count: int, named_count: int) -> str:
+    return f"""
+      <nav class="roster-tabs" aria-label="Roster sections">
+        <a class="{"active" if active == "unnamed" else ""}" href="/roster?group=unnamed">Unnamed visitors <span>{unnamed_count}</span></a>
+        <a class="{"active" if active == "named" else ""}" href="/roster?group=named">Named identities <span>{named_count}</span></a>
+      </nav>
+    """
+
+
+def render_roster_pager(group: str, page: int, total_pages: int, total_items: int) -> str:
+    if total_pages <= 1:
+        return f'<div class="pager"><span>{total_items} entries</span></div>'
+    pages = sorted({1, total_pages, page - 1, page, page + 1})
+    links: list[str] = []
+    previous_page = 0
+    for item in pages:
+        if item < 1 or item > total_pages:
+            continue
+        if previous_page and item - previous_page > 1:
+            links.append("<span>...</span>")
+        href = f"/roster?{urlencode({'group': group, 'page': item})}"
+        if item == page:
+            links.append(f'<span class="active">{item}</span>')
+        else:
+            links.append(f'<a href="{href}">{item}</a>')
+        previous_page = item
+    summary = f"{total_items} entries, {ROSTER_PAGE_SIZE} per page"
+    prev_link = (
+        f'<a href="/roster?{urlencode({"group": group, "page": page - 1})}">Previous</a>'
+        if page > 1
+        else "<span>Previous</span>"
+    )
+    next_link = (
+        f'<a href="/roster?{urlencode({"group": group, "page": page + 1})}">Next</a>'
+        if page < total_pages
+        else "<span>Next</span>"
+    )
+    return f'<div class="pager"><span>{summary}</span><div class="pager-links">{prev_link}{"".join(links)}{next_link}</div></div>'
+
+
+def render_roster_card(person: RosterPerson, saved_return: str, deleted_return: str) -> str:
     initials = "".join(part[:1] for part in person.name.split()[:2]).upper() or "ID"
     media = (
-        f'<img class="roster-photo" src="{escape(person.snapshot_url)}" alt="{escape(person.name)} snapshot">'
+        f'<img class="roster-photo" src="{escape(person.snapshot_url)}" alt="{escape(person.name)} snapshot" loading="lazy">'
         if person.snapshot_url
         else f'<div class="roster-avatar">{escape(initials)}</div>'
     )
@@ -1114,29 +1194,45 @@ def render_roster_row(person: RosterPerson) -> str:
         aliases = '<span class="alias-chip">No aliases</span>'
     last_seen = format_ts_for_display(person.last_seen_ts) if person.last_seen_ts else "Never"
     return f"""
-      <article class="roster-row">
-        {media}
-        <div>
+      <article class="roster-card">
+        <div class="roster-media">
+          {media}
+          <div class="roster-score">Face {person.face_score}%</div>
+        </div>
+        <div class="roster-card-body">
           <h3 class="roster-name">{escape(person.name)}</h3>
           <div class="roster-aliases">{aliases}</div>
+          <div class="roster-stats">
+            <div class="roster-stat"><span>Sessions</span><strong>{len(person.sessions)}</strong></div>
+            <div class="roster-stat"><span>Total</span><strong>{escape(format_duration(person.total_seconds))}</strong></div>
+            <div class="roster-stat"><span>Last seen</span><strong>{escape(last_seen)}</strong></div>
+          </div>
+          <form class="roster-form" method="post" action="/api/identity/rename">
+            <input type="hidden" name="old_name" value="{escape(person.name)}">
+            <input type="hidden" name="return_to" value="{escape(saved_return)}">
+            <input name="new_name" list="identity-options" value="{escape(person.name)}" aria-label="Rename {escape(person.name)}">
+            <button type="submit">Rename</button>
+          </form>
+          <form class="roster-delete-form" method="post" action="/api/identity/delete">
+            <input type="hidden" name="name" value="{escape(person.name)}">
+            <input type="hidden" name="return_to" value="{escape(deleted_return)}">
+            <button type="submit">Delete</button>
+          </form>
         </div>
-        <div class="roster-stat"><span>Sessions</span><strong>{len(person.sessions)}</strong></div>
-        <div class="roster-stat"><span>Total time</span><strong>{escape(format_duration(person.total_seconds))}</strong></div>
-        <div class="roster-stat"><span>Face evidence</span><strong>{person.face_score}%</strong></div>
-        <div class="roster-stat"><span>Last seen</span><strong>{escape(last_seen)}</strong></div>
-        <form class="roster-form" method="post" action="/api/identity/rename">
-          <input type="hidden" name="old_name" value="{escape(person.name)}">
-          <input type="hidden" name="return_to" value="/roster?saved=1">
-          <input name="new_name" list="identity-options" value="{escape(person.name)}" aria-label="Rename {escape(person.name)}">
-          <button type="submit">Rename</button>
-        </form>
-        <form class="roster-delete-form" method="post" action="/api/identity/delete" onsubmit="return confirm('Delete this roster entry and all related sessions?');">
-          <input type="hidden" name="name" value="{escape(person.name)}">
-          <input type="hidden" name="return_to" value="/roster?deleted=1">
-          <button type="submit">Delete</button>
-        </form>
       </article>
     """
+
+
+def is_unnamed_identity(name: str, config: AppConfig) -> bool:
+    return name.startswith(config.unknown_identity_prefix)
+
+
+def parse_positive_int(value: str, *, default: int) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        return default
+    return parsed if parsed > 0 else default
 
 
 def best_face_distance(sessions: list[Session]) -> float | None:

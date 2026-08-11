@@ -21,6 +21,7 @@ class Track:
     session_id: int | None = None
     last_event_at: dict[str, float] = field(default_factory=dict)
     last_name: str | None = None
+    unknown_face_observations: int = 0
 
 
 class CentroidTracker:

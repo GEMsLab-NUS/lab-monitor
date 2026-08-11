@@ -8,6 +8,20 @@ if (-not $Uv) {
 $AppExe = Join-Path $Root ".venv\Scripts\lab-monitor.exe"
 
 Set-Location $Root
+$PidFile = Join-Path $Root ".lab-monitor.pid"
+
+if (Test-Path $PidFile) {
+    $ExistingPid = (Get-Content $PidFile -ErrorAction SilentlyContinue | Select-Object -First 1)
+    if ($ExistingPid) {
+        $ExistingProcess = Get-Process -Id $ExistingPid -ErrorAction SilentlyContinue
+        if ($ExistingProcess) {
+            Write-Host "Lab Monitor is already running with PID $ExistingPid"
+            Write-Host "Dashboard: http://127.0.0.1:8765"
+            exit 0
+        }
+    }
+}
+
 & $Uv sync
 if (-not (Test-Path $AppExe)) {
     throw "Application entrypoint not found after uv sync: $AppExe"
@@ -17,7 +31,6 @@ $LogDir = Join-Path $Root "data\logs"
 New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
 $OutLog = Join-Path $LogDir "lab-monitor.out.log"
 $ErrLog = Join-Path $LogDir "lab-monitor.err.log"
-$PidFile = Join-Path $Root ".lab-monitor.pid"
 
 $Process = Start-Process `
     -FilePath $AppExe `

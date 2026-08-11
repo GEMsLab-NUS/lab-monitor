@@ -74,8 +74,11 @@ class FaceService:
         enrolled_dir: Path,
         threshold: float,
         *,
-        min_face_size_px: int = 52,
-        min_face_area_ratio: float = 0.006,
+        min_face_size_px: int = 72,
+        min_face_area_ratio: float = 0.012,
+        min_sharpness: float = 18.0,
+        min_brightness: float = 35.0,
+        max_brightness: float = 220.0,
     ) -> None:
         cv2 = load_cv2()
         self.cv2 = cv2
@@ -84,6 +87,9 @@ class FaceService:
         self.threshold = threshold
         self.min_face_size_px = min_face_size_px
         self.min_face_area_ratio = min_face_area_ratio
+        self.min_sharpness = min_sharpness
+        self.min_brightness = min_brightness
+        self.max_brightness = max_brightness
         self.faces_dir.mkdir(parents=True, exist_ok=True)
         self.enrolled_dir.mkdir(parents=True, exist_ok=True)
         cascade_path = Path(cv2.data.haarcascades) / "haarcascade_frontalface_default.xml"
@@ -106,7 +112,7 @@ class FaceService:
         faces = self._detector.detectMultiScale(
             gray,
             scaleFactor=1.1,
-            minNeighbors=5,
+            minNeighbors=7,
             minSize=(self.min_face_size_px, self.min_face_size_px),
         )
         return [
@@ -127,6 +133,8 @@ class FaceService:
         threshold: float | None = None,
     ) -> tuple[str | None, float | None]:
         if not self.can_recognize or self._recognizer is None:
+            return None, None
+        if not self.is_enrollable_face(frame, face_box):
             return None, None
         gray_face = self._prepare_face(frame, face_box)
         label_id, distance = self._recognizer.predict(gray_face)
@@ -159,6 +167,8 @@ class FaceService:
         return saved
 
     def enroll_face_crop(self, name: str, frame: np.ndarray, face_box: BBox, sample_name: str) -> bool:
+        if not self.is_enrollable_face(frame, face_box):
+            return False
         label_id = self._label_id_for_name(name)
         target_dir = self.enrolled_dir / str(label_id)
         target_dir.mkdir(parents=True, exist_ok=True)
@@ -255,6 +265,26 @@ class FaceService:
         face = crop(gray, face_box)
         return self.cv2.resize(face, (160, 160))
 
+    def is_enrollable_face(self, frame: np.ndarray, face_box: BBox) -> bool:
+        if not is_face_box_usable(
+            face_box,
+            frame.shape,
+            min_size_px=max(self.min_face_size_px, 64),
+            min_area_ratio=max(self.min_face_area_ratio, 0.010),
+        ):
+            return False
+        gray = self.cv2.cvtColor(frame, self.cv2.COLOR_BGR2GRAY)
+        face = crop(gray, face_box)
+        if face.size == 0:
+            return False
+        mean_brightness = float(np.mean(face))
+        if mean_brightness < self.min_brightness or mean_brightness > self.max_brightness:
+            return False
+        sharpness = float(self.cv2.Laplacian(face, self.cv2.CV_64F).var())
+        if sharpness < self.min_sharpness:
+            return False
+        return True
+
     def _largest_face(self, frame: np.ndarray) -> BBox | None:
         faces = self.detect_faces(frame)
         if not faces:
@@ -305,15 +335,19 @@ def is_face_box_usable(
     box: BBox,
     frame_shape: tuple[int, ...],
     *,
-    min_size_px: int = 52,
-    min_area_ratio: float = 0.006,
+    min_size_px: int = 64,
+    min_area_ratio: float = 0.010,
 ) -> bool:
     height, width = frame_shape[:2]
     x, y, w, h = clamp_box(box, width, height)
     if w < min_size_px or h < min_size_px:
         return False
     aspect = w / h if h else 0.0
-    if aspect < 0.72 or aspect > 1.38:
+    if aspect < 0.78 or aspect > 1.28:
+        return False
+    margin_x = max(3, int(width * 0.01))
+    margin_y = max(3, int(height * 0.01))
+    if x <= margin_x or y <= margin_y or x + w >= width - margin_x or y + h >= height - margin_y:
         return False
     if box_area_ratio((x, y, w, h), frame_shape) < min_area_ratio:
         return False

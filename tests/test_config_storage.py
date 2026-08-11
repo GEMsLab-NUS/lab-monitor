@@ -10,6 +10,7 @@ import unittest
 from lab_monitor.config import AppConfig, load_config, save_config_updates, validate_config_updates
 from lab_monitor.reporting import build_analytics, sessions_to_csv, sessions_to_json_payload
 from lab_monitor.storage import EventStore, utc_now
+from lab_monitor.web import render_roster_page
 
 
 class ConfigTests(unittest.TestCase):
@@ -263,6 +264,26 @@ class StorageTests(unittest.TestCase):
             self.assertEqual(payload["summary"]["total_sessions"], 1)
             self.assertEqual(payload["identities"], ["Alice"])
             self.assertEqual(payload["sessions"][0]["identity"], "Alice")
+            store.close()
+
+    def test_roster_page_uses_tabs_cards_pagination_and_direct_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = AppConfig(data_dir=tmp)
+            store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))
+            for index in range(30):
+                store.ensure_identity(f"Visitor {index + 1:03d}")
+            for name in ("Alice", "Bob"):
+                store.ensure_identity(name)
+
+            visitor_html = render_roster_page(store, config, None, {"group": ["unnamed"]})
+            named_html = render_roster_page(store, config, None, {"group": ["named"]})
+
+            self.assertIn("Unnamed visitors", visitor_html)
+            self.assertIn("Named identities", visitor_html)
+            self.assertEqual(visitor_html.count('class="roster-card"'), 24)
+            self.assertIn("Next", visitor_html)
+            self.assertNotIn("confirm(", visitor_html)
+            self.assertEqual(named_html.count('class="roster-card"'), 2)
             store.close()
 
     def test_analytics_handles_empty_and_populated_sessions(self) -> None:

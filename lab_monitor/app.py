@@ -130,6 +130,9 @@ def cmd_clean_roster(args: argparse.Namespace) -> int:
         config.face_recognition_threshold,
         min_face_size_px=config.min_face_size_px,
         min_face_area_ratio=config.min_face_area_ratio,
+        min_sharpness=config.face_enrollment_min_sharpness,
+        min_brightness=config.face_enrollment_min_brightness,
+        max_brightness=config.face_enrollment_max_brightness,
     )
     if args.dry_run:
         result = preview_roster_cleanup(
@@ -190,6 +193,9 @@ def cmd_enroll(args: argparse.Namespace) -> int:
         config.face_recognition_threshold,
         min_face_size_px=config.min_face_size_px,
         min_face_area_ratio=config.min_face_area_ratio,
+        min_sharpness=config.face_enrollment_min_sharpness,
+        min_brightness=config.face_enrollment_min_brightness,
+        max_brightness=config.face_enrollment_max_brightness,
     )
     if args.images:
         image_dir = Path(args.images)

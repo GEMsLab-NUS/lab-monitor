@@ -2,6 +2,15 @@ $ErrorActionPreference = "Stop"
 
 $Root = Split-Path -Parent $PSScriptRoot
 Set-Location $Root
+$StartScript = Join-Path $PSScriptRoot "start-background.ps1"
+
+function Start-BackgroundService {
+    Write-Host "Ensuring background service is running..."
+    & powershell -ExecutionPolicy Bypass -File $StartScript
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to start the background service."
+    }
+}
 
 function Require-Command {
     param([string]$Name)
@@ -50,13 +59,15 @@ if (-not $LocalSha -or -not $RemoteSha) {
 }
 
 if ($LocalSha -eq $RemoteSha) {
-    Write-Host "Already up to date. No service restart, database backup, or deployment step was needed."
+    Write-Host "Already up to date. No database backup or deployment step was needed."
+    Start-BackgroundService
     exit 0
 }
 
 $MergeBase = Get-GitValue @("merge-base", "HEAD", $Upstream)
 if ($MergeBase -eq $RemoteSha) {
     Write-Host "Local branch is ahead of $Upstream. No remote update is needed."
+    Start-BackgroundService
     exit 0
 }
 if ($MergeBase -ne $LocalSha) {
@@ -74,8 +85,8 @@ $ShortLocal = $LocalSha.Substring(0, 7)
 $ShortRemote = $RemoteSha.Substring(0, 7)
 Write-Host "Update available: $ShortLocal -> $ShortRemote"
 
-$StopScript = Join-Path $PSScriptRoot "stop-background.ps1"
 $DeployScript = Join-Path $PSScriptRoot "deploy-windows.ps1"
+$StopScript = Join-Path $PSScriptRoot "stop-background.ps1"
 
 Write-Host "Stopping background service..."
 & powershell -ExecutionPolicy Bypass -File $StopScript
@@ -106,6 +117,11 @@ if ($LASTEXITCODE -ne 0) {
 
 Write-Host "Redeploying..."
 & powershell -ExecutionPolicy Bypass -File $DeployScript
+if ($LASTEXITCODE -ne 0) {
+    throw "Deployment failed. Check the output above."
+}
+
+Start-BackgroundService
 
 Write-Host ""
 Write-Host "Update complete."
