@@ -76,6 +76,60 @@ class VisionQualityTests(unittest.TestCase):
 
 
 class MonitorIdentityTests(unittest.TestCase):
+    def test_person_detection_without_face_does_not_start_candidate_track(self) -> None:
+        class FakePersonDetector:
+            def detect(self, frame: np.ndarray) -> list[tuple[int, int, int, int]]:
+                return [(500, 250, 90, 190)]
+
+        class FakeFaceService:
+            def detect_faces(self, frame: np.ndarray) -> list[tuple[int, int, int, int]]:
+                return []
+
+            def is_enrollable_face(self, frame: np.ndarray, face: tuple[int, int, int, int]) -> bool:
+                return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=1)
+            store = EventStore(config.database_path, config.data_path)
+            monitor = CameraMonitor(config, store)
+            monitor._person_detector = FakePersonDetector()  # type: ignore[assignment]
+            monitor._face_service = FakeFaceService()  # type: ignore[assignment]
+            frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+
+            monitor.process_frame(frame)
+
+            self.assertEqual(monitor.status.active_tracks, 0)
+            self.assertEqual(monitor.live_snapshot()["tracks"], [])
+            store.close()
+
+    def test_face_supported_person_detection_starts_track(self) -> None:
+        class FakePersonDetector:
+            def detect(self, frame: np.ndarray) -> list[tuple[int, int, int, int]]:
+                return [(180, 80, 240, 340)]
+
+        class FakeFaceService:
+            def detect_faces(self, frame: np.ndarray) -> list[tuple[int, int, int, int]]:
+                return [(240, 130, 80, 86)]
+
+            def is_enrollable_face(self, frame: np.ndarray, face: tuple[int, int, int, int]) -> bool:
+                return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=60)
+            store = EventStore(config.database_path, config.data_path)
+            monitor = CameraMonitor(config, store)
+            monitor._person_detector = FakePersonDetector()  # type: ignore[assignment]
+            monitor._face_service = FakeFaceService()  # type: ignore[assignment]
+            frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+
+            monitor.process_frame(frame)
+
+            self.assertEqual(monitor.status.active_tracks, 1)
+            self.assertEqual(monitor.live_snapshot()["faces"], [{"bbox": [240, 130, 80, 86]}])
+            store.close()
+
     def test_track_without_face_does_not_allocate_visitor_identity(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)

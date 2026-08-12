@@ -412,6 +412,12 @@ class StorageTests(unittest.TestCase):
             except HTTPError as exc:
                 self.fail(f"maintenance endpoint returned {exc.code}: {exc.read().decode('utf-8')}")
             finally:
+                for _ in range(50):
+                    with server._maintenance_lock:
+                        running = bool(server._maintenance_state["running"])
+                    if not running:
+                        break
+                    time.sleep(0.1)
                 server.shutdown()
                 store.close()
 

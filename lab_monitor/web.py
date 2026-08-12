@@ -1271,7 +1271,7 @@ def render_live_page(config: AppConfig, monitor: CameraMonitor | None) -> str:
                 <div class="live-row"><span>Merge gap</span><strong>{config.session_merge_gap_minutes}m</strong></div>
               </section>
               <section class="live-card">
-                <h3>Active tracks</h3>
+                <h3>Recognized tracks</h3>
                 <div class="live-track-list" data-live-track-list><div class="empty">No recognized tracks.</div></div>
               </section>
             </aside>

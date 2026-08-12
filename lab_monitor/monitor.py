@@ -116,7 +116,7 @@ class CameraMonitor:
     def process_frame(self, frame: np.ndarray) -> None:
         frame = self._resize_for_processing(frame)
         height, width = frame.shape[:2]
-        person_boxes = [
+        detected_person_boxes = [
             box
             for box in self._person_detector.detect(frame)
             if is_person_box_usable(
@@ -131,9 +131,7 @@ class CameraMonitor:
             for face in self._face_service.detect_faces(frame)
             if self._face_service.is_enrollable_face(frame, face)
         ]
-
-        if not person_boxes and face_boxes:
-            person_boxes = [person_box_from_face(face, width, height) for face in face_boxes]
+        person_boxes = self._supported_person_boxes(detected_person_boxes, face_boxes, width, height)
 
         _new_tracks, removed_tracks = self._tracker.update(person_boxes)
         for track in removed_tracks:
@@ -160,6 +158,32 @@ class CameraMonitor:
     def latest_frame_jpeg(self) -> bytes | None:
         with self._live_lock:
             return self._latest_frame_jpeg
+
+    def _supported_person_boxes(
+        self,
+        person_boxes: list[BBox],
+        face_boxes: list[BBox],
+        frame_width: int,
+        frame_height: int,
+    ) -> list[BBox]:
+        supported: list[BBox] = []
+        for box in person_boxes:
+            if any(face_inside_person(face, box) for face in face_boxes) or self._continues_established_track(box):
+                supported.append(box)
+        for face in face_boxes:
+            if not any(face_inside_person(face, box) for box in supported):
+                supported.append(person_box_from_face(face, frame_width, frame_height))
+        return supported
+
+    def _continues_established_track(self, box: BBox) -> bool:
+        target_centroid = (box[0] + box[2] / 2, box[1] + box[3] / 2)
+        for track in self._tracker.tracks.values():
+            if track.last_name is None and track.dwell_confirmed_at is None:
+                continue
+            distance = ((track.centroid[0] - target_centroid[0]) ** 2 + (track.centroid[1] - target_centroid[1]) ** 2) ** 0.5
+            if distance <= self.config.max_tracking_distance_px:
+                return True
+        return False
 
     def _record_population_events(self, frame: np.ndarray) -> None:
         dwelled_tracks = [track for track in self._tracker.tracks.values() if track.dwell_confirmed_at is not None]
