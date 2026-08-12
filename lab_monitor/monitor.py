@@ -221,7 +221,7 @@ class CameraMonitor:
             track = self._track_for_face(face)
             if track is None or track.dwell_confirmed_at is None:
                 continue
-            name, confidence = self._identify_face(frame, face)
+            name, confidence, matched = self._stable_identify_track(track, frame, face)
             if name:
                 track.last_name = name
                 if track.session_id is not None:
@@ -246,6 +246,8 @@ class CameraMonitor:
                         confidence=confidence,
                         snapshot_path=snapshot_path,
                     )
+                continue
+            if matched:
                 continue
             track.unknown_face_observations += 1
             if track.unknown_face_observations < self.config.min_unknown_face_observations:
@@ -274,9 +276,11 @@ class CameraMonitor:
         for face in face_boxes:
             if not face_inside_person(face, track.bbox):
                 continue
-            name, confidence = self._identify_face(frame, face)
+            name, confidence, matched = self._stable_identify_track(track, frame, face)
             if name:
                 return name, confidence, face
+            if matched:
+                return None, confidence, None
             track.unknown_face_observations += 1
             if track.unknown_face_observations < self.config.min_unknown_face_observations:
                 return None, confidence, None
@@ -296,6 +300,42 @@ class CameraMonitor:
         if track.last_name:
             return self.store.resolve_identity(track.last_name), None, None
         return None, None, None
+
+    def _stable_identify_track(
+        self,
+        track: Track,
+        frame: np.ndarray,
+        face: BBox,
+    ) -> tuple[str | None, float | None, bool]:
+        name, confidence = self._identify_face(frame, face)
+        if name is None:
+            track.identity_observations.clear()
+            return None, confidence, False
+        canonical = self.store.resolve_identity(name)
+        current = self.store.resolve_identity(track.last_name) if track.last_name else None
+        if current == canonical:
+            track.identity_observations[canonical] = max(
+                track.identity_observations.get(canonical, 0),
+                self._required_identity_observations(confidence),
+            )
+            return canonical, confidence, True
+        track.identity_observations = {
+            observed: count
+            for observed, count in track.identity_observations.items()
+            if observed == canonical
+        }
+        track.identity_observations[canonical] = track.identity_observations.get(canonical, 0) + 1
+        required = self._required_identity_observations(confidence)
+        if current is not None:
+            required += 1
+        if track.identity_observations[canonical] < required:
+            return None, confidence, True
+        return canonical, confidence, True
+
+    def _required_identity_observations(self, confidence: float | None) -> int:
+        if confidence is not None and confidence <= self.config.face_recognition_threshold:
+            return 2
+        return max(2, min(3, self.config.min_unknown_face_observations))
 
     def _identify_face(self, frame: np.ndarray, face: BBox) -> tuple[str | None, float | None]:
         name, confidence = self._face_service.recognize_face(frame, face)
@@ -359,12 +399,14 @@ class CameraMonitor:
         height, width = frame.shape[:2]
         tracks = []
         for track in self._tracker.tracks.values():
+            if not track.last_name:
+                continue
             visible_seconds = max(0.0, now - track.first_seen)
             tracks.append(
                 {
                     "id": track.id,
                     "bbox": list(track.bbox),
-                    "identity": self.store.resolve_identity(track.last_name) if track.last_name else "Candidate",
+                    "identity": self.store.resolve_identity(track.last_name),
                     "confirmed": track.dwell_confirmed_at is not None,
                     "session_id": track.session_id,
                     "visible_seconds": round(visible_seconds, 1),

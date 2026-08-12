@@ -22,6 +22,7 @@ class Track:
     last_event_at: dict[str, float] = field(default_factory=dict)
     last_name: str | None = None
     unknown_face_observations: int = 0
+    identity_observations: dict[str, int] = field(default_factory=dict)
 
 
 class CentroidTracker:

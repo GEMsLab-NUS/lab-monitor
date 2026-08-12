@@ -728,9 +728,9 @@ DASHBOARD_JS = """
       }
       liveStage.appendChild(box);
     };
-    (payload.tracks || []).forEach((track) => {
+    (payload.tracks || []).filter((track) => track.identity).forEach((track) => {
       const progress = Math.round(Number(track.dwell_progress || 0) * 100);
-      addBox(track, track.confirmed ? 'confirmed' : '', `${track.identity || 'Candidate'} ${progress}%`);
+      addBox(track, track.confirmed ? 'confirmed' : '', `${track.identity} ${progress}%`);
     });
     (payload.faces || []).forEach((face) => addBox(face, 'face', 'Face'));
   };
@@ -739,7 +739,7 @@ DASHBOARD_JS = """
     const list = document.querySelector('[data-live-track-list]');
     if (!list) return;
     if (!tracks || !tracks.length) {
-      list.innerHTML = '<div class="empty">No active candidates.</div>';
+      list.innerHTML = '<div class="empty">No recognized tracks.</div>';
       return;
     }
     list.innerHTML = tracks.map((track) => {
@@ -747,7 +747,7 @@ DASHBOARD_JS = """
       const state = track.confirmed ? 'Confirmed' : 'Dwell';
       return `
         <div class="live-track">
-          <div class="live-track-top"><strong>${escapeHtml(track.identity || 'Candidate')}</strong><span>${state}</span></div>
+          <div class="live-track-top"><strong>${escapeHtml(track.identity)}</strong><span>${state}</span></div>
           <div class="mini-progress"><span style="width:${progress}%"></span></div>
           <div class="live-row"><span>Visible</span><strong>${Number(track.visible_seconds || 0).toFixed(1)}s</strong></div>
         </div>
@@ -759,7 +759,7 @@ DASHBOARD_JS = """
     lastLivePayload = payload;
     setText('[data-live-running]', payload.running ? 'Running' : 'Stopped');
     setText('[data-live-camera]', payload.camera_open ? 'Open' : 'Closed');
-    setText('[data-live-tracks-count]', String(payload.active_tracks || 0));
+    setText('[data-live-tracks-count]', String((payload.tracks || []).length));
     setText('[data-live-faces-count]', String((payload.faces || []).length));
     setText('[data-live-updated]', payload.has_frame ? new Date().toLocaleTimeString() : 'Waiting');
     setText('[data-live-error]', payload.last_error || 'None');
@@ -1265,14 +1265,14 @@ def render_live_page(config: AppConfig, monitor: CameraMonitor | None) -> str:
               </section>
               <section class="live-card">
                 <h3>Recognition</h3>
-                <div class="live-row"><span>Active tracks</span><strong data-live-tracks-count>{status.active_tracks if status else 0}</strong></div>
+                <div class="live-row"><span>Recognized tracks</span><strong data-live-tracks-count>0</strong></div>
                 <div class="live-row"><span>Faces</span><strong data-live-faces-count>0</strong></div>
                 <div class="live-row"><span>Dwell gate</span><strong>{config.min_dwell_seconds}s</strong></div>
                 <div class="live-row"><span>Merge gap</span><strong>{config.session_merge_gap_minutes}m</strong></div>
               </section>
               <section class="live-card">
                 <h3>Active tracks</h3>
-                <div class="live-track-list" data-live-track-list><div class="empty">No active candidates.</div></div>
+                <div class="live-track-list" data-live-track-list><div class="empty">No recognized tracks.</div></div>
               </section>
             </aside>
           </div>

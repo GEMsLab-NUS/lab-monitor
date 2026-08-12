@@ -127,6 +127,54 @@ class MonitorIdentityTests(unittest.TestCase):
             self.assertEqual(payload["tracks"][0]["identity"], "Visitor 001")  # type: ignore[index]
             store.close()
 
+    def test_live_state_omits_unnamed_candidate_tracks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=10)
+            store = EventStore(config.database_path, config.data_path)
+            monitor = CameraMonitor(config, store)
+            now = monotonic()
+            monitor._tracker.tracks[1] = Track(
+                id=1,
+                bbox=(180, 80, 240, 340),
+                centroid=(300.0, 250.0),
+                first_seen=now - 5,
+                last_seen=now,
+            )
+            frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+
+            monitor._update_live_state(frame, [(240, 130, 80, 86)])
+            payload = monitor.live_snapshot()
+
+            self.assertEqual(payload["tracks"], [])
+            store.close()
+
+    def test_known_face_requires_repeated_observations_before_identity_use(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=1)
+            store = EventStore(config.database_path, config.data_path)
+            monitor = CameraMonitor(config, store)
+            monitor._identify_face = lambda frame, face: ("Alice", 42.0)  # type: ignore[method-assign]
+            now = monotonic()
+            track = Track(
+                id=1,
+                bbox=(180, 80, 240, 340),
+                centroid=(300.0, 250.0),
+                first_seen=now - 20,
+                last_seen=now,
+            )
+            frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+            face = (240, 130, 80, 86)
+
+            self.assertEqual(monitor._resolve_track_identity(track, frame, [face]), (None, 42.0, None))
+            identity, confidence, used_face = monitor._resolve_track_identity(track, frame, [face])
+
+            self.assertEqual(identity, "Alice")
+            self.assertEqual(confidence, 42.0)
+            self.assertEqual(used_face, face)
+            store.close()
+
     def test_unknown_face_requires_repeated_observations_before_enrollment(self) -> None:
         class FakeFaceService:
             def __init__(self) -> None:

@@ -342,6 +342,7 @@ class StorageTests(unittest.TestCase):
         self.assertIn("/api/live/status", html)
         self.assertNotIn('http-equiv="refresh"', html)
         self.assertGreater(html.rfind("<script>"), html.find('class="live-stage"'))
+        self.assertNotIn("Candidate", html)
 
     def test_live_payload_without_monitor_has_empty_state(self) -> None:
         payload = build_live_payload(None)
