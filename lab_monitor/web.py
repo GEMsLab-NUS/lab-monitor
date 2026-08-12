@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import ast
 import calendar
 from dataclasses import asdict, dataclass
 from datetime import date, datetime, timedelta
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import json
-from threading import Thread
+from pathlib import Path
+import subprocess
+import sys
+from threading import Lock, Thread
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 
@@ -17,7 +21,6 @@ from .config import (
     load_config,
     save_config_updates,
 )
-from .maintenance import cleanup_nonface_visitors
 from .monitor import CameraMonitor
 from .reporting import (
     AnalyticsSummary,
@@ -561,6 +564,12 @@ class DashboardServer:
         self.store = store
         self.monitor = monitor
         self.config_path = config_path
+        self._maintenance_lock = Lock()
+        self._maintenance_state: dict[str, Any] = {
+            "running": False,
+            "last_result": None,
+            "last_error": None,
+        }
         self._server = self._build_server()
         self._thread: Thread | None = None
         self._started = False
@@ -607,7 +616,15 @@ class DashboardServer:
                     return
                 if parsed.path == "/settings":
                     settings_config = load_config(config_path)
-                    self._send_html(render_settings_page(settings_config, runtime_config, monitor, query))
+                    self._send_html(
+                        render_settings_page(
+                            settings_config,
+                            runtime_config,
+                            monitor,
+                            query,
+                            self._maintenance_snapshot(),
+                        )
+                    )
                     return
                 if parsed.path == "/api/sessions":
                     limit = int(query.get("limit", ["1000"])[0])
@@ -719,16 +736,9 @@ class DashboardServer:
                     self._redirect("/settings?saved=1")
                     return
                 if parsed.path == "/api/maintenance/cleanup-nonface-visitors":
-                    face_service = create_face_service(runtime_config)
-                    result = cleanup_nonface_visitors(store, runtime_config.unknown_identity_prefix, face_service)
-                    for item in result["names"]:
-                        if monitor is not None:
-                            monitor.delete_identity(str(item))
-                        else:
-                            face_service.delete_label(str(item))
-                    self._redirect(
-                        f"/settings?{urlencode({'cleaned': str(result['deleted_people'])})}"
-                    )
+                    started = self._start_nonface_cleanup()
+                    status = "started" if started else "running"
+                    self._redirect(f"/settings?{urlencode({'maintenance': status})}")
                     return
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -750,6 +760,28 @@ class DashboardServer:
                 accept = self.headers.get("Accept", "")
                 requested_with = self.headers.get("X-Requested-With", "")
                 return "application/json" in accept or requested_with.lower() == "fetch"
+
+            def _maintenance_snapshot(self) -> dict[str, Any]:
+                with self.server.dashboard._maintenance_lock:  # type: ignore[attr-defined]
+                    return dict(self.server.dashboard._maintenance_state)  # type: ignore[attr-defined]
+
+            def _start_nonface_cleanup(self) -> bool:
+                dashboard = self.server.dashboard  # type: ignore[attr-defined]
+                with dashboard._maintenance_lock:
+                    if dashboard._maintenance_state["running"]:
+                        return False
+                    dashboard._maintenance_state = {
+                        "running": True,
+                        "last_result": None,
+                        "last_error": None,
+                    }
+                worker = Thread(
+                    target=dashboard._run_nonface_cleanup,
+                    name="lab-monitor-maintenance",
+                    daemon=True,
+                )
+                worker.start()
+                return True
 
             def _send_download(self, body: str, content_type: str, filename: str) -> None:
                 data = body.encode("utf-8")
@@ -801,7 +833,48 @@ class DashboardServer:
                 self.end_headers()
                 self.wfile.write(data)
 
-        return ThreadingHTTPServer((self.config.web_host, self.config.web_port), Handler)
+        server = ThreadingHTTPServer((self.config.web_host, self.config.web_port), Handler)
+        server.dashboard = self  # type: ignore[attr-defined]
+        return server
+
+    def _run_nonface_cleanup(self) -> None:
+        try:
+            completed = subprocess.run(
+                [
+                    sys.executable,
+                    "-m",
+                    "lab_monitor",
+                    "--config",
+                    self.config_path,
+                    "clean-roster",
+                    "--include-low-evidence",
+                    "--delete-nonface-visitors",
+                    "--min-total-seconds",
+                    "20",
+                ],
+                cwd=str(Path(self.config_path).resolve().parent),
+                capture_output=True,
+                text=True,
+                timeout=1800,
+            )
+            if completed.returncode != 0:
+                error = completed.stderr.strip() or completed.stdout.strip() or f"exit code {completed.returncode}"
+                raise RuntimeError(error)
+            output = completed.stdout.strip().splitlines()
+            result = ast.literal_eval(output[-1]) if output else {"deleted_people": 0, "names": []}
+            with self._maintenance_lock:
+                self._maintenance_state = {
+                    "running": False,
+                    "last_result": result,
+                    "last_error": None,
+                }
+        except Exception as exc:  # noqa: BLE001
+            with self._maintenance_lock:
+                self._maintenance_state = {
+                    "running": False,
+                    "last_result": None,
+                    "last_error": str(exc),
+                }
 
 
 def render_calendar_page(
@@ -979,13 +1052,16 @@ def render_settings_page(
     runtime_config: AppConfig,
     monitor: CameraMonitor | None,
     query: dict[str, list[str]] | None = None,
+    maintenance_state: dict[str, Any] | None = None,
 ) -> str:
     query = query or {}
+    maintenance_state = maintenance_state or {}
     notice = ""
     if query.get("saved", [""])[0] == "1":
         notice = '<div class="notice success">Settings saved. Restart the background service for changes to take effect.</div>'
-    if query.get("cleaned", [""])[0]:
-        notice = f'<div class="notice success">Removed {escape(query["cleaned"][0])} visitor record(s) without verified avatars.</div>'
+    maintenance_notice = render_maintenance_notice(query, maintenance_state)
+    if maintenance_notice:
+        notice = maintenance_notice
     if query.get("error", [""])[0]:
         notice = f'<div class="notice error">{escape(query["error"][0])}</div>'
     main = f"""
@@ -1021,8 +1097,8 @@ def render_settings_page(
                 <span class="panel-note">Runtime cleanup</span>
               </div>
               <div class="form-actions">
-                <button class="button" type="submit" formaction="/api/maintenance/cleanup-nonface-visitors" formmethod="post">Remove visitors without avatars</button>
-                <span class="panel-note">Deletes unnamed visitor records whose retained snapshots do not contain a verified face.</span>
+                <button class="button" type="submit" formaction="/api/maintenance/cleanup-nonface-visitors" formmethod="post" {"disabled" if maintenance_state.get("running") else ""}>Remove visitors without avatars</button>
+                <span class="panel-note">Runs in the background. Restart after cleanup to reload the face model.</span>
               </div>
             </section>
             {render_settings_groups(saved_config)}
@@ -1035,6 +1111,22 @@ def render_settings_page(
       </main>
     """
     return render_shell("Settings", "settings", "", "", main, runtime_config, monitor, wide=True)
+
+
+def render_maintenance_notice(query: dict[str, list[str]], state: dict[str, Any]) -> str:
+    if state.get("running"):
+        return '<div class="notice success">Roster cleanup is running in the background. This page will stay available.</div>'
+    if state.get("last_error"):
+        return f'<div class="notice error">Roster cleanup failed: {escape(str(state["last_error"]))}</div>'
+    result = state.get("last_result")
+    if isinstance(result, dict):
+        deleted = escape(str(result.get("deleted_people", 0)))
+        return f'<div class="notice success">Removed {deleted} visitor record(s) without verified avatars. Restart to reload the face model.</div>'
+    if query.get("maintenance", [""])[0] == "started":
+        return '<div class="notice success">Roster cleanup started in the background.</div>'
+    if query.get("maintenance", [""])[0] == "running":
+        return '<div class="notice success">Roster cleanup is already running.</div>'
+    return ""
 
 
 def create_face_service(config: AppConfig) -> FaceService:

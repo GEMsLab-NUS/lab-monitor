@@ -5,13 +5,15 @@ import json
 import os
 from pathlib import Path
 import tempfile
+import time
 import unittest
 from unittest.mock import patch
+from urllib.request import Request, urlopen
 
 from lab_monitor.config import AppConfig, load_config, save_config_updates, validate_config_updates
 from lab_monitor.reporting import build_analytics, sessions_to_csv, sessions_to_json_payload
 from lab_monitor.storage import EventStore, utc_now
-from lab_monitor.web import render_roster_page, render_settings_page
+from lab_monitor.web import DashboardServer, render_roster_page, render_settings_page
 
 
 class ConfigTests(unittest.TestCase):
@@ -325,6 +327,40 @@ class StorageTests(unittest.TestCase):
 
         self.assertIn("Remove visitors without avatars", html)
         self.assertIn("/api/maintenance/cleanup-nonface-visitors", html)
+        self.assertIn("Runs in the background", html)
+
+    def test_settings_cleanup_post_returns_to_settings_and_keeps_server_alive(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "data"
+            config_path = Path(tmp) / "config.json"
+            config = AppConfig(data_dir=str(data_dir), web_port=0)
+            config_path.write_text(json.dumps(config.to_dict()), encoding="utf-8")
+            store = EventStore(config.database_path, config.data_path)
+            server = DashboardServer(config, store, None, str(config_path))
+            server.start_background()
+            port = int(server._server.server_address[1])
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{port}/api/maintenance/cleanup-nonface-visitors",
+                    data=b"",
+                    method="POST",
+                )
+                response = urlopen(request, timeout=10)
+                html = response.read().decode("utf-8")
+
+                self.assertEqual(response.status, 200)
+                self.assertIn("Settings", html)
+                health = urlopen(f"http://127.0.0.1:{port}/api/stats", timeout=10).read().decode("utf-8")
+                self.assertIn("storage", health)
+                for _ in range(50):
+                    with server._maintenance_lock:
+                        running = bool(server._maintenance_state["running"])
+                    if not running:
+                        break
+                    time.sleep(0.1)
+            finally:
+                server.shutdown()
+                store.close()
 
     def test_roster_uses_first_snapshot_that_still_contains_face(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
