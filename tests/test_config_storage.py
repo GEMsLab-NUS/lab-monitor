@@ -14,7 +14,7 @@ from urllib.error import HTTPError
 from lab_monitor.config import AppConfig, load_config, save_config_updates, validate_config_updates
 from lab_monitor.reporting import build_analytics, sessions_to_csv, sessions_to_json_payload
 from lab_monitor.storage import EventStore, utc_now
-from lab_monitor.web import DashboardServer, render_roster_page, render_settings_page
+from lab_monitor.web import DashboardServer, build_live_payload, render_live_page, render_roster_page, render_settings_page
 
 
 class ConfigTests(unittest.TestCase):
@@ -330,6 +330,24 @@ class StorageTests(unittest.TestCase):
         self.assertIn("/api/maintenance/cleanup-nonface-visitors", html)
         self.assertIn("Runs in the background", html)
         self.assertIn("data-maintenance-progress", html)
+        self.assertIn("Advanced", html)
+        self.assertIn("Monitoring", html)
+
+    def test_live_page_renders_without_full_page_refresh(self) -> None:
+        config = AppConfig()
+        html = render_live_page(config, None)
+
+        self.assertIn("Live view", html)
+        self.assertIn("data-live-stage", html)
+        self.assertIn("/api/live/status", html)
+        self.assertNotIn('http-equiv="refresh"', html)
+
+    def test_live_payload_without_monitor_has_empty_state(self) -> None:
+        payload = build_live_payload(None)
+
+        self.assertFalse(payload["running"])
+        self.assertFalse(payload["has_frame"])
+        self.assertEqual(payload["tracks"], [])
 
     def test_settings_cleanup_post_returns_to_settings_and_keeps_server_alive(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

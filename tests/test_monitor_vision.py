@@ -100,6 +100,33 @@ class MonitorIdentityTests(unittest.TestCase):
             self.assertEqual(store.list_identity_names(), [])
             store.close()
 
+    def test_live_state_keeps_latest_frame_faces_and_tracks(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=10)
+            store = EventStore(config.database_path, config.data_path)
+            monitor = CameraMonitor(config, store)
+            now = monotonic()
+            monitor._tracker.tracks[1] = Track(
+                id=1,
+                bbox=(180, 80, 240, 340),
+                centroid=(300.0, 250.0),
+                first_seen=now - 5,
+                last_seen=now,
+                last_name="Visitor 001",
+            )
+            frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+
+            monitor._update_live_state(frame, [(240, 130, 80, 86)])
+            payload = monitor.live_snapshot()
+
+            self.assertTrue(payload["has_frame"])
+            self.assertIsNotNone(monitor.latest_frame_jpeg())
+            self.assertEqual(payload["frame"]["width"], 640)  # type: ignore[index]
+            self.assertEqual(payload["faces"], [{"bbox": [240, 130, 80, 86]}])
+            self.assertEqual(payload["tracks"][0]["identity"], "Visitor 001")  # type: ignore[index]
+            store.close()
+
     def test_unknown_face_requires_repeated_observations_before_enrollment(self) -> None:
         class FakeFaceService:
             def __init__(self) -> None:

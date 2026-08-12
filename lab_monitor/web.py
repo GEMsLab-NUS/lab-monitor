@@ -209,6 +209,66 @@ a { color: inherit; }
 .calendar-head, .content-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--line); background: var(--surface); }
 .calendar-head h2, .content-head h2 { margin: 0; font-size: 15px; font-weight: 700; }
 .calendar-subtitle, .content-subtitle { color: var(--muted); font-size: 12px; }
+.content-body { display: grid; gap: 16px; padding: 16px; }
+.live-shell { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.live-stage {
+  position: relative;
+  min-height: min(66vh, 720px);
+  overflow: hidden;
+  border: 1px solid var(--line-soft);
+  border-radius: 8px;
+  background: #080b10;
+  box-shadow: inset 0 0 0 1px rgba(255,255,255,.03);
+}
+.live-stage::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  background-image:
+    linear-gradient(rgba(255,255,255,.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,.035) 1px, transparent 1px);
+  background-size: 34px 34px;
+  opacity: .25;
+}
+.live-stage::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.04), transparent 34%, rgba(0,0,0,.24)); }
+.live-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 1; }
+.live-empty { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; color: var(--muted); font-size: 14px; background: radial-gradient(circle at center, rgba(37,99,235,.12), transparent 42%); }
+.live-empty[hidden] { display: none; }
+.live-box {
+  position: absolute;
+  z-index: 5;
+  border: 2px solid var(--unknown);
+  border-radius: 7px;
+  box-shadow: 0 0 0 1px rgba(0,0,0,.3), 0 0 24px rgba(180,83,9,.16);
+  transition: left .18s ease, top .18s ease, width .18s ease, height .18s ease, border-color .18s ease;
+}
+.live-box.confirmed { border-color: var(--success); box-shadow: 0 0 0 1px rgba(0,0,0,.3), 0 0 24px rgba(22,138,91,.22); }
+.live-box.face { border-color: var(--accent); border-style: dashed; box-shadow: 0 0 0 1px rgba(0,0,0,.2); }
+.live-label { position: absolute; left: 8px; top: -28px; max-width: 190px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 5px 8px; border-radius: 999px; background: rgba(17, 24, 39, .78); color: #fff; font-size: 12px; font-weight: 750; backdrop-filter: blur(8px); }
+.live-pulse { position: absolute; right: 18px; top: 18px; z-index: 6; width: 10px; height: 10px; border-radius: 999px; background: var(--success); box-shadow: 0 0 0 0 rgba(22,138,91,.55); animation: livePulse 1.4s infinite; }
+@keyframes livePulse { 70% { box-shadow: 0 0 0 14px rgba(22,138,91,0); } 100% { box-shadow: 0 0 0 0 rgba(22,138,91,0); } }
+.live-side { display: grid; gap: 12px; }
+.live-card { border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-raised); padding: 13px; box-shadow: var(--shadow-sm); }
+.live-card h3 { margin: 0 0 10px; font-size: 13px; color: var(--muted); font-weight: 720; }
+.live-row { display: flex; justify-content: space-between; gap: 12px; padding: 7px 0; border-top: 1px solid var(--line-soft); font-size: 12px; }
+.live-row:first-of-type { border-top: 0; }
+.live-row span { color: var(--muted); }
+.live-row strong { color: var(--text); text-align: right; }
+.live-track-list { display: grid; gap: 8px; max-height: 330px; overflow: auto; }
+.live-track { display: grid; gap: 7px; padding: 10px; border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface-subtle); }
+.live-track-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 12px; }
+.live-track-top strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.mini-progress { height: 6px; overflow: hidden; border-radius: 999px; background: var(--line-soft); }
+.mini-progress span { display: block; height: 100%; width: 0%; border-radius: inherit; background: var(--success); transition: width .25s ease; }
+.settings-layout { display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: 16px; align-items: start; }
+.settings-main { display: grid; gap: 14px; }
+.settings-side { display: grid; gap: 14px; }
+.settings-side .panel { position: sticky; top: 86px; }
+.settings-advanced { border: 1px solid var(--line-soft); border-radius: 8px; background: var(--surface); }
+.settings-advanced summary { cursor: pointer; padding: 13px 14px; color: var(--text); font-size: 13px; font-weight: 700; }
+.settings-advanced .panel { border: 0; border-top: 1px solid var(--line-soft); border-radius: 0; box-shadow: none; }
 .calendar-scroll { overflow: auto; max-height: calc(100vh - 156px); }
 .month-grid { min-width: 860px; display: grid; grid-template-columns: repeat(7, minmax(120px, 1fr)); border-left: 1px solid var(--line-soft); }
 .weekday {
@@ -290,7 +350,6 @@ a { color: inherit; }
 .session-popover-row { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .session-popover-row strong { color: var(--text); font-weight: 650; text-align: right; }
 .empty { padding: 16px 14px; color: var(--muted); font-size: 13px; }
-.content-body { padding: 16px; }
 .dashboard-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .chart-list { display: grid; gap: 9px; padding: 14px; }
 .bar-row { display: grid; grid-template-columns: 90px minmax(0, 1fr) 58px; gap: 10px; align-items: center; color: var(--muted); font-size: 12px; }
@@ -360,11 +419,15 @@ a { color: inherit; }
   .toolbar, .topnav { flex-wrap: wrap; }
   .toolbar-title { order: -1; flex-basis: 100%; text-align: left; }
   .layout, .dashboard-grid, .form-grid { grid-template-columns: 1fr; padding: 12px; }
+  .live-shell, .settings-layout { grid-template-columns: 1fr; }
+  .live-stage { min-height: 420px; }
+  .settings-side .panel { position: static; }
   .roster-grid { grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); }
   .calendar-scroll { max-height: none; }
 }
 @media (max-width: 620px) {
   .health-grid, .metric-grid, .field-grid { grid-template-columns: 1fr; }
+  .live-stage { min-height: 300px; }
   .status-pill { width: 100%; justify-content: center; }
   .roster-grid { grid-template-columns: 1fr; }
   .roster-tabs { width: 100%; }
@@ -607,6 +670,127 @@ DASHBOARD_JS = """
     scheduleMaintenancePoll();
   }
 
+  const liveStage = document.querySelector('[data-live-stage]');
+  const liveFrame = document.querySelector('[data-live-frame]');
+  const liveEmpty = document.querySelector('[data-live-empty]');
+  let lastLivePayload = null;
+
+  const setText = (selector, text) => {
+    const element = document.querySelector(selector);
+    if (element) element.textContent = text;
+  };
+
+  const escapeHtml = (value) => String(value ?? '')
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+
+  const boxPlacement = (bbox, frame, stageRect) => {
+    if (!frame || !frame.width || !frame.height) return null;
+    const [x, y, width, height] = bbox || [];
+    if (![x, y, width, height].every(Number.isFinite)) return null;
+    const scale = Math.min(stageRect.width / frame.width, stageRect.height / frame.height);
+    const displayedWidth = frame.width * scale;
+    const displayedHeight = frame.height * scale;
+    const offsetX = (stageRect.width - displayedWidth) / 2;
+    const offsetY = (stageRect.height - displayedHeight) / 2;
+    return {
+      left: offsetX + x * scale,
+      top: offsetY + y * scale,
+      width: width * scale,
+      height: height * scale
+    };
+  };
+
+  const drawLiveBoxes = (payload) => {
+    if (!liveStage) return;
+    liveStage.querySelectorAll('.live-box').forEach((box) => box.remove());
+    const frame = payload?.frame;
+    if (!frame) return;
+    const rect = liveStage.getBoundingClientRect();
+    const addBox = (item, className, label) => {
+      const placement = boxPlacement(item.bbox, frame, rect);
+      if (!placement || placement.width < 8 || placement.height < 8) return;
+      const box = document.createElement('div');
+      box.className = `live-box ${className}`.trim();
+      box.style.left = `${placement.left}px`;
+      box.style.top = `${placement.top}px`;
+      box.style.width = `${placement.width}px`;
+      box.style.height = `${placement.height}px`;
+      if (label) {
+        const badge = document.createElement('span');
+        badge.className = 'live-label';
+        badge.textContent = label;
+        box.appendChild(badge);
+      }
+      liveStage.appendChild(box);
+    };
+    (payload.tracks || []).forEach((track) => {
+      const progress = Math.round(Number(track.dwell_progress || 0) * 100);
+      addBox(track, track.confirmed ? 'confirmed' : '', `${track.identity || 'Candidate'} ${progress}%`);
+    });
+    (payload.faces || []).forEach((face) => addBox(face, 'face', 'Face'));
+  };
+
+  const renderLiveTracks = (tracks) => {
+    const list = document.querySelector('[data-live-track-list]');
+    if (!list) return;
+    if (!tracks || !tracks.length) {
+      list.innerHTML = '<div class="empty">No active candidates.</div>';
+      return;
+    }
+    list.innerHTML = tracks.map((track) => {
+      const progress = Math.max(0, Math.min(100, Math.round(Number(track.dwell_progress || 0) * 100)));
+      const state = track.confirmed ? 'Confirmed' : 'Dwell';
+      return `
+        <div class="live-track">
+          <div class="live-track-top"><strong>${escapeHtml(track.identity || 'Candidate')}</strong><span>${state}</span></div>
+          <div class="mini-progress"><span style="width:${progress}%"></span></div>
+          <div class="live-row"><span>Visible</span><strong>${Number(track.visible_seconds || 0).toFixed(1)}s</strong></div>
+        </div>
+      `;
+    }).join('');
+  };
+
+  const updateLivePage = (payload) => {
+    lastLivePayload = payload;
+    setText('[data-live-running]', payload.running ? 'Running' : 'Stopped');
+    setText('[data-live-camera]', payload.camera_open ? 'Open' : 'Closed');
+    setText('[data-live-tracks-count]', String(payload.active_tracks || 0));
+    setText('[data-live-faces-count]', String((payload.faces || []).length));
+    setText('[data-live-updated]', payload.has_frame ? new Date().toLocaleTimeString() : 'Waiting');
+    setText('[data-live-error]', payload.last_error || 'None');
+    renderLiveTracks(payload.tracks || []);
+    if (liveEmpty) liveEmpty.hidden = Boolean(payload.has_frame);
+    if (payload.has_frame && liveFrame) {
+      liveFrame.src = `/api/live/frame?t=${Date.now()}`;
+    } else {
+      drawLiveBoxes(payload);
+    }
+  };
+
+  const pollLive = async () => {
+    if (!liveStage) return;
+    try {
+      const response = await fetch('/api/live/status', { cache: 'no-store', headers: { 'Accept': 'application/json' } });
+      if (response.ok) updateLivePage(await response.json());
+    } catch (error) {
+      setText('[data-live-running]', 'Disconnected');
+    } finally {
+      window.setTimeout(pollLive, 850);
+    }
+  };
+
+  if (liveFrame) {
+    liveFrame.addEventListener('load', () => drawLiveBoxes(lastLivePayload));
+  }
+  if (liveStage) {
+    window.addEventListener('resize', () => drawLiveBoxes(lastLivePayload));
+    pollLive();
+  }
+
   document.addEventListener('click', (event) => {
     const chip = event.target.closest('.session-chip[data-session-id]');
     if (!chip) {
@@ -684,6 +868,9 @@ class DashboardServer:
                 if parsed.path in {"/", "/calendar"}:
                     self._send_html(render_calendar_page(store, runtime_config, monitor, query))
                     return
+                if parsed.path == "/live":
+                    self._send_html(render_live_page(runtime_config, monitor))
+                    return
                 if parsed.path == "/analytics":
                     self._send_html(render_analytics_page(store, runtime_config, monitor, query))
                     return
@@ -715,6 +902,12 @@ class DashboardServer:
                     return
                 if parsed.path == "/api/stats":
                     self._send_json(build_stats_payload(store, monitor))
+                    return
+                if parsed.path == "/api/live/status":
+                    self._send_json(build_live_payload(monitor))
+                    return
+                if parsed.path == "/api/live/frame":
+                    self._send_live_frame(monitor)
                     return
                 if parsed.path == "/api/maintenance/status":
                     self._send_json(self._maintenance_snapshot())
@@ -889,6 +1082,18 @@ class DashboardServer:
                 self.end_headers()
                 self.wfile.write(data)
 
+            def _send_live_frame(self, monitor: CameraMonitor | None) -> None:
+                frame = monitor.latest_frame_jpeg() if monitor else None
+                if frame is None:
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/jpeg")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(frame)))
+                self.end_headers()
+                self.wfile.write(frame)
+
             def _send_event_snapshot(self, event_id: int, store: EventStore) -> None:
                 event = store.get_event(event_id)
                 if event is None or event.snapshot_path is None:
@@ -1024,6 +1229,51 @@ def render_calendar_page(
       </main>
     """
     return render_shell("Calendar", "calendar", toolbar, sidebar, main, config, monitor)
+
+
+def render_live_page(config: AppConfig, monitor: CameraMonitor | None) -> str:
+    status = monitor.status if monitor else None
+    main = f"""
+      <main class="content-panel">
+        <div class="content-head">
+          <div>
+            <h2>Live view</h2>
+            <div class="content-subtitle">Camera frame with current recognition overlays.</div>
+          </div>
+          <div class="content-subtitle">Updated <span data-live-updated>Waiting</span></div>
+        </div>
+        <div class="content-body">
+          <div class="live-shell">
+            <section class="live-stage" data-live-stage>
+              <img class="live-frame" data-live-frame alt="Live camera frame">
+              <div class="live-empty" data-live-empty>Waiting for camera feed</div>
+              <div class="live-pulse"></div>
+            </section>
+            <aside class="live-side">
+              <section class="live-card">
+                <h3>System</h3>
+                <div class="live-row"><span>Monitor</span><strong data-live-running>{"Running" if status and status.running else "Stopped"}</strong></div>
+                <div class="live-row"><span>Camera</span><strong data-live-camera>{"Open" if status and status.camera_open else "Closed"}</strong></div>
+                <div class="live-row"><span>Device</span><strong>#{config.camera_index}</strong></div>
+                <div class="live-row"><span>Last error</span><strong data-live-error>{escape((status.last_error if status else None) or "None")}</strong></div>
+              </section>
+              <section class="live-card">
+                <h3>Recognition</h3>
+                <div class="live-row"><span>Active tracks</span><strong data-live-tracks-count>{status.active_tracks if status else 0}</strong></div>
+                <div class="live-row"><span>Faces</span><strong data-live-faces-count>0</strong></div>
+                <div class="live-row"><span>Dwell gate</span><strong>{config.min_dwell_seconds}s</strong></div>
+                <div class="live-row"><span>Merge gap</span><strong>{config.session_merge_gap_minutes}m</strong></div>
+              </section>
+              <section class="live-card">
+                <h3>Active tracks</h3>
+                <div class="live-track-list" data-live-track-list><div class="empty">No active candidates.</div></div>
+              </section>
+            </aside>
+          </div>
+        </div>
+      </main>
+    """
+    return render_shell("Live", "live", "", "", main, config, monitor, wide=True, auto_refresh=False)
 
 
 def render_roster_page(
@@ -1195,44 +1445,61 @@ def render_settings_page(
         </div>
         <div class="content-body">
           {notice}
-          <section class="panel">
-            <div class="panel-header">
-              <h3 class="panel-title">Roster maintenance</h3>
-              <span class="panel-note">Runtime cleanup</span>
-            </div>
-            <div class="form-actions">
-              <form class="maintenance-form" method="post" action="/api/maintenance/cleanup-nonface-visitors">
-                <button class="button" type="submit" data-maintenance-submit {"disabled" if maintenance_state.get("running") else ""}>Remove visitors without avatars</button>
-              </form>
-              <div class="maintenance-progress" data-maintenance-progress {"hidden" if not maintenance_state.get("running") and not maintenance_state.get("last_result") and not maintenance_state.get("last_error") else ""}>
-                <div class="progress-meta"><span data-maintenance-phase>Idle</span><span data-maintenance-count></span></div>
-                <div class="progress-track"><div class="progress-fill" data-maintenance-fill></div></div>
-              </div>
-              <span class="panel-note">Runs in the background. Named identities are not removed.</span>
-            </div>
-          </section>
-          <form method="post" action="/api/settings">
-            <section class="panel">
-              <div class="panel-header">
-                <h3 class="panel-title">Work profile</h3>
-                <span class="panel-note">Optional preset</span>
-              </div>
-              <div class="field-grid">
-                <div class="field">
-                  <label for="profile">Profile</label>
-                  <select id="profile" name="profile">
-                    <option value="">Keep custom values</option>
-                    {''.join(f'<option value="{escape(name)}">{escape(name)}</option>' for name in WORK_PROFILES)}
-                  </select>
+          <div class="settings-layout">
+            <form class="settings-main" method="post" action="/api/settings">
+              <section class="panel">
+                <div class="panel-header">
+                  <h3 class="panel-title">Work profile</h3>
+                  <span class="panel-note">Optional preset</span>
                 </div>
+                <div class="field-grid">
+                  <div class="field">
+                    <label for="profile">Profile</label>
+                    <select id="profile" name="profile">
+                      <option value="">Keep custom values</option>
+                      {''.join(f'<option value="{escape(name)}">{escape(name)}</option>' for name in WORK_PROFILES)}
+                    </select>
+                  </div>
+                  {render_config_field("camera_index", saved_config.camera_index)}
+                </div>
+              </section>
+              {render_settings_compact(saved_config)}
+              <div class="form-actions">
+                <button class="button primary" type="submit">Save settings</button>
+                <span class="panel-note">Changes are persisted only. Restart required.</span>
               </div>
-            </section>
-            {render_settings_groups(saved_config)}
-            <div class="form-actions">
-              <button class="button primary" type="submit">Save settings</button>
-              <span class="panel-note">Changes are persisted only. Restart required.</span>
-            </div>
-          </form>
+            </form>
+            <aside class="settings-side">
+              <section class="panel">
+                <div class="panel-header">
+                  <h3 class="panel-title">Runtime</h3>
+                  <span class="panel-note">Current process</span>
+                </div>
+                <div class="health-grid">
+                  <div class="metric"><span>Host</span><strong>{escape(runtime_config.web_host)}</strong><small>Dashboard bind</small></div>
+                  <div class="metric"><span>Port</span><strong>{runtime_config.web_port}</strong><small>Restart to change</small></div>
+                </div>
+              </section>
+              <section class="panel">
+                <div class="panel-header">
+                  <h3 class="panel-title">Roster maintenance</h3>
+                  <span class="panel-note">Runtime cleanup</span>
+                </div>
+                <div class="form-actions">
+                  <form class="maintenance-form" method="post" action="/api/maintenance/cleanup-nonface-visitors">
+                    <button class="button" type="submit" data-maintenance-submit {"disabled" if maintenance_state.get("running") else ""}>Remove visitors without avatars</button>
+                  </form>
+                </div>
+                <div class="form-actions">
+                  <div class="maintenance-progress" data-maintenance-progress {"hidden" if not maintenance_state.get("running") and not maintenance_state.get("last_result") and not maintenance_state.get("last_error") else ""}>
+                    <div class="progress-meta"><span data-maintenance-phase>Idle</span><span data-maintenance-count></span></div>
+                    <div class="progress-track"><div class="progress-fill" data-maintenance-fill></div></div>
+                  </div>
+                </div>
+                <div class="empty">Runs in the background. Named identities are not removed.</div>
+              </section>
+            </aside>
+          </div>
         </div>
       </main>
     """
@@ -1278,18 +1545,20 @@ def render_shell(
     monitor: CameraMonitor | None,
     *,
     wide: bool = False,
+    auto_refresh: bool = True,
 ) -> str:
     running = bool(monitor and monitor.status.running and monitor.status.camera_open)
     health = "Online" if running else "Offline"
     health_dot = "" if running else " off"
     layout_class = "layout wide" if wide else "layout"
     sidebar_html = f'<aside class="sidebar">{sidebar}</aside>' if sidebar else ""
+    refresh_meta = '<meta http-equiv="refresh" content="15">' if auto_refresh else ""
     return f"""<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta http-equiv="refresh" content="15">
+  {refresh_meta}
   <title>Lab Monitor - {escape(page_title)}</title>
   <style>{DASHBOARD_CSS}</style>
   <script defer>{DASHBOARD_JS}</script>
@@ -1320,6 +1589,7 @@ def render_shell(
 def render_topnav(active: str) -> str:
     items = [
         ("calendar", "/calendar", "Calendar"),
+        ("live", "/live", "Live"),
         ("roster", "/roster", "Roster"),
         ("analytics", "/analytics", "Analytics"),
         ("export", "/export", "Export"),
@@ -1595,6 +1865,56 @@ def face_evidence_score(sessions: list[Session]) -> int:
     return max(1, min(100, int(round(100 * (1 - min(best, 140.0) / 140.0)))))
 
 
+def render_settings_compact(config: AppConfig) -> str:
+    primary_groups = [
+        (
+            "Monitoring",
+            "Core logging behavior",
+            ["min_dwell_seconds", "session_merge_gap_minutes", "poll_interval_ms", "max_tracking_distance_px"],
+        ),
+        (
+            "Identity recognition",
+            "Face matching and visitor naming",
+            [
+                "face_recognition_threshold",
+                "face_soft_match_threshold",
+                "min_unknown_face_observations",
+                "unknown_identity_prefix",
+                "min_face_size_px",
+            ],
+        ),
+        (
+            "Retention and network",
+            "Stored history and dashboard bind",
+            ["snapshot_retention_days", "log_retention_days", "web_host", "web_port"],
+        ),
+    ]
+    primary_keys = {"camera_index"}
+    sections = []
+    for title, note, keys in primary_groups:
+        primary_keys.update(keys)
+        sections.append(render_settings_section(title, note, keys, config))
+    advanced_keys = [key for key in CONFIG_FIELDS if key not in primary_keys]
+    sections.append(
+        '<details class="settings-advanced">'
+        '<summary>Advanced</summary>'
+        + render_settings_section("Advanced parameters", "Fine tuning", advanced_keys, config)
+        + "</details>"
+    )
+    return "".join(sections)
+
+
+def render_settings_section(title: str, note: str, keys: list[str], config: AppConfig) -> str:
+    values = config.to_dict()
+    return (
+        '<section class="panel">'
+        f'<div class="panel-header"><h3 class="panel-title">{escape(title)}</h3><span class="panel-note">{escape(note)}</span></div>'
+        '<div class="field-grid">'
+        + "".join(render_config_field(key, values[key]) for key in keys)
+        + "</div></section>"
+    )
+
+
 def render_settings_groups(config: AppConfig) -> str:
     grouped: dict[str, list[str]] = {}
     for key, spec in CONFIG_FIELDS.items():
@@ -1684,6 +2004,31 @@ def build_stats_payload(store: EventStore, monitor: CameraMonitor | None) -> dic
             "active_tracks": status.active_tracks,
             "last_error": status.last_error,
         }
+    return payload
+
+
+def build_live_payload(monitor: CameraMonitor | None) -> dict[str, Any]:
+    if monitor is None:
+        return {
+            "running": False,
+            "camera_open": False,
+            "active_tracks": 0,
+            "last_error": "Monitor not attached",
+            "has_frame": False,
+            "frame": None,
+            "faces": [],
+            "tracks": [],
+        }
+    status = monitor.status
+    payload = monitor.live_snapshot()
+    payload.update(
+        {
+            "running": status.running,
+            "camera_open": status.camera_open,
+            "active_tracks": status.active_tracks,
+            "last_error": status.last_error,
+        }
+    )
     return payload
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock
 from time import monotonic, sleep
 
 import numpy as np
@@ -48,6 +49,13 @@ class CameraMonitor:
             min_brightness=config.face_enrollment_min_brightness,
             max_brightness=config.face_enrollment_max_brightness,
         )
+        self._live_lock = Lock()
+        self._latest_frame_jpeg: bytes | None = None
+        self._latest_live_payload: dict[str, object] = {
+            "frame": None,
+            "faces": [],
+            "tracks": [],
+        }
 
     @property
     def status(self) -> MonitorStatus:
@@ -141,6 +149,17 @@ class CameraMonitor:
         self._record_population_events(frame)
         self._record_track_behaviors(frame, face_boxes)
         self._refresh_face_identity(frame, face_boxes)
+        self._update_live_state(frame, face_boxes)
+
+    def live_snapshot(self) -> dict[str, object]:
+        with self._live_lock:
+            payload = dict(self._latest_live_payload)
+            payload["has_frame"] = self._latest_frame_jpeg is not None
+            return payload
+
+    def latest_frame_jpeg(self) -> bytes | None:
+        with self._live_lock:
+            return self._latest_frame_jpeg
 
     def _record_population_events(self, frame: np.ndarray) -> None:
         dwelled_tracks = [track for track in self._tracker.tracks.values() if track.dwell_confirmed_at is not None]
@@ -331,6 +350,40 @@ class CameraMonitor:
         if not ok:
             return None
         return str(Path("snapshots") / file_name)
+
+    def _update_live_state(self, frame: np.ndarray, face_boxes: list[BBox]) -> None:
+        ok, encoded = self._cv2.imencode(".jpg", frame, [int(self._cv2.IMWRITE_JPEG_QUALITY), 78])
+        if not ok:
+            return
+        now = monotonic()
+        height, width = frame.shape[:2]
+        tracks = []
+        for track in self._tracker.tracks.values():
+            visible_seconds = max(0.0, now - track.first_seen)
+            tracks.append(
+                {
+                    "id": track.id,
+                    "bbox": list(track.bbox),
+                    "identity": self.store.resolve_identity(track.last_name) if track.last_name else "Candidate",
+                    "confirmed": track.dwell_confirmed_at is not None,
+                    "session_id": track.session_id,
+                    "visible_seconds": round(visible_seconds, 1),
+                    "dwell_progress": min(1.0, visible_seconds / max(1, self.config.min_dwell_seconds)),
+                    "missing_frames": track.missing_frames,
+                }
+            )
+        payload: dict[str, object] = {
+            "frame": {
+                "width": width,
+                "height": height,
+                "updated_at": int(now * 1000),
+            },
+            "faces": [{"bbox": list(face)} for face in face_boxes],
+            "tracks": tracks,
+        }
+        with self._live_lock:
+            self._latest_frame_jpeg = encoded.tobytes()
+            self._latest_live_payload = payload
 
     def _should_emit(self, track: Track, key: str, interval_seconds: int | None = None) -> bool:
         now = monotonic()
