@@ -59,7 +59,11 @@ class CameraMonitor:
         )
 
     def rename_identity(self, old_name: str, new_name: str) -> bool:
-        renamed = self._face_service.rename_label(old_name, new_name)
+        renamed = self._face_service.rename_label(
+            old_name,
+            new_name,
+            max_samples=self.config.max_face_samples_per_identity,
+        )
         for track in self._tracker.tracks.values():
             if track.last_name == old_name:
                 track.last_name = new_name
@@ -205,6 +209,18 @@ class CameraMonitor:
                     snapshot_path = None
                     if self._should_emit(track, f"face_snapshot:{track.session_id}", interval_seconds=300):
                         snapshot_path = self._save_snapshot(frame, face, "face", track.id)
+                    if self._should_emit(
+                        track,
+                        f"face_learn:{name}",
+                        interval_seconds=self.config.face_learning_interval_seconds,
+                    ):
+                        self._face_service.enroll_face_crop(
+                            name,
+                            frame,
+                            face,
+                            f"learn_track{track.id}_{int(monotonic() * 1000)}",
+                            max_samples=self.config.max_face_samples_per_identity,
+                        )
                     self.store.update_session(
                         track.session_id,
                         identity_name=name,
@@ -225,6 +241,7 @@ class CameraMonitor:
                     frame,
                     face,
                     f"track{track.id}_{int(monotonic() * 1000)}",
+                    max_samples=self.config.max_face_samples_per_identity,
                 )
             if track.session_id is not None:
                 self.store.update_session(track.session_id, identity_name=track.last_name, confidence=confidence)
@@ -254,6 +271,7 @@ class CameraMonitor:
                 frame,
                 face,
                 f"track{track.id}_{int(monotonic() * 1000)}",
+                max_samples=self.config.max_face_samples_per_identity,
             )
             return identity, confidence, face
         if track.last_name:

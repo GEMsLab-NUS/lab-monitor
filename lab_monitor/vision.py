@@ -166,7 +166,15 @@ class FaceService:
             self.retrain()
         return saved
 
-    def enroll_face_crop(self, name: str, frame: np.ndarray, face_box: BBox, sample_name: str) -> bool:
+    def enroll_face_crop(
+        self,
+        name: str,
+        frame: np.ndarray,
+        face_box: BBox,
+        sample_name: str,
+        *,
+        max_samples: int | None = None,
+    ) -> bool:
         if not self.is_enrollable_face(frame, face_box):
             return False
         label_id = self._label_id_for_name(name)
@@ -179,18 +187,47 @@ class FaceService:
             return False
         self._labels[str(label_id)] = name
         self._save_labels()
+        if max_samples is not None:
+            self._prune_label_samples(label_id, max_samples)
         self.retrain()
         return True
 
-    def rename_label(self, old_name: str, new_name: str) -> bool:
-        renamed = False
-        for raw_id, existing in list(self._labels.items()):
-            if existing == old_name:
-                self._labels[raw_id] = new_name
-                renamed = True
-        if renamed:
-            self._save_labels()
-        return renamed
+    def sample_count(self, name: str) -> int:
+        label_id = self._label_id_for_name(name)
+        target_dir = self.enrolled_dir / str(label_id)
+        if not target_dir.exists():
+            return 0
+        return sum(1 for item in target_dir.glob("*.png") if item.is_file())
+
+    def rename_label(self, old_name: str, new_name: str, *, max_samples: int | None = None) -> bool:
+        old_ids = [int(raw_id) for raw_id, existing in self._labels.items() if existing == old_name]
+        target_ids = [int(raw_id) for raw_id, existing in self._labels.items() if existing == new_name]
+        label_ids = sorted(set(old_ids + target_ids))
+        if not old_ids:
+            return False
+        primary_id = label_ids[0]
+        target_dir = self.enrolled_dir / str(primary_id)
+        target_dir.mkdir(parents=True, exist_ok=True)
+        for label_id in label_ids:
+            if label_id == primary_id:
+                continue
+            source_dir = self.enrolled_dir / str(label_id)
+            if source_dir.exists():
+                for image_path in source_dir.glob("*.png"):
+                    destination = target_dir / f"label{label_id}_{image_path.name}"
+                    counter = 1
+                    while destination.exists():
+                        destination = target_dir / f"label{label_id}_{counter}_{image_path.name}"
+                        counter += 1
+                    shutil.move(str(image_path), str(destination))
+                shutil.rmtree(source_dir, ignore_errors=True)
+            self._labels.pop(str(label_id), None)
+        self._labels[str(primary_id)] = new_name
+        if max_samples is not None:
+            self._prune_label_samples(primary_id, max_samples)
+        self._save_labels()
+        self.retrain()
+        return True
 
     def delete_label(self, name: str) -> int:
         deleted = 0
@@ -314,6 +351,19 @@ class FaceService:
                 return int(raw_id)
         existing_ids = [int(raw_id) for raw_id in self._labels]
         return (max(existing_ids) + 1) if existing_ids else 1
+
+    def _prune_label_samples(self, label_id: int, max_samples: int) -> int:
+        target_dir = self.enrolled_dir / str(label_id)
+        if not target_dir.exists():
+            return 0
+        samples = sorted(
+            [item for item in target_dir.glob("*.png") if item.is_file()],
+            key=lambda item: (item.stat().st_mtime, item.name),
+        )
+        overflow = max(0, len(samples) - max_samples)
+        for item in samples[:overflow]:
+            item.unlink(missing_ok=True)
+        return overflow
 
 
 def face_inside_person(face: BBox, person: BBox) -> bool:

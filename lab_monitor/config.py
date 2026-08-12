@@ -30,6 +30,8 @@ class AppConfig:
     face_enrollment_min_sharpness: float = 18.0
     face_enrollment_min_brightness: float = 35.0
     face_enrollment_max_brightness: float = 220.0
+    face_learning_interval_seconds: int = 600
+    max_face_samples_per_identity: int = 48
     min_person_area_ratio: float = 0.015
     max_person_area_ratio: float = 0.70
     unknown_face_label: str = "unknown"
@@ -73,6 +75,8 @@ CONFIG_FIELDS: dict[str, dict[str, Any]] = {
     "face_enrollment_min_sharpness": {"type": float, "min": 0.0, "max": 500.0, "group": "Identity recognition"},
     "face_enrollment_min_brightness": {"type": float, "min": 0.0, "max": 255.0, "group": "Identity recognition"},
     "face_enrollment_max_brightness": {"type": float, "min": 0.0, "max": 255.0, "group": "Identity recognition"},
+    "face_learning_interval_seconds": {"type": int, "min": 60, "max": 86400, "group": "Identity recognition"},
+    "max_face_samples_per_identity": {"type": int, "min": 5, "max": 500, "group": "Identity recognition"},
     "min_person_area_ratio": {"type": float, "min": 0.0005, "max": 0.80, "group": "Monitoring behavior"},
     "max_person_area_ratio": {"type": float, "min": 0.05, "max": 1.0, "group": "Monitoring behavior"},
     "unknown_identity_prefix": {"type": str, "min_length": 1, "max_length": 40, "group": "Identity recognition"},
@@ -98,6 +102,8 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "face_enrollment_min_sharpness": 18.0,
         "face_enrollment_min_brightness": 35.0,
         "face_enrollment_max_brightness": 220.0,
+        "face_learning_interval_seconds": 600,
+        "max_face_samples_per_identity": 48,
         "min_person_area_ratio": 0.015,
         "max_person_area_ratio": 0.70,
     },
@@ -115,6 +121,8 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "face_enrollment_min_sharpness": 14.0,
         "face_enrollment_min_brightness": 30.0,
         "face_enrollment_max_brightness": 230.0,
+        "face_learning_interval_seconds": 300,
+        "max_face_samples_per_identity": 64,
         "min_person_area_ratio": 0.010,
         "max_person_area_ratio": 0.78,
     },
@@ -132,6 +140,8 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "face_enrollment_min_sharpness": 24.0,
         "face_enrollment_min_brightness": 45.0,
         "face_enrollment_max_brightness": 210.0,
+        "face_learning_interval_seconds": 900,
+        "max_face_samples_per_identity": 36,
         "min_person_area_ratio": 0.025,
         "max_person_area_ratio": 0.55,
     },

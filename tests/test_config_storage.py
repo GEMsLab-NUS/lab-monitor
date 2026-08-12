@@ -11,7 +11,7 @@ from unittest.mock import patch
 from lab_monitor.config import AppConfig, load_config, save_config_updates, validate_config_updates
 from lab_monitor.reporting import build_analytics, sessions_to_csv, sessions_to_json_payload
 from lab_monitor.storage import EventStore, utc_now
-from lab_monitor.web import render_roster_page
+from lab_monitor.web import render_roster_page, render_settings_page
 
 
 class ConfigTests(unittest.TestCase):
@@ -302,6 +302,29 @@ class StorageTests(unittest.TestCase):
             self.assertIn("fetch(form.action", visitor_html)
             self.assertEqual(named_html.count('class="roster-card"'), 2)
             store.close()
+
+    def test_roster_named_identity_collapses_visitor_aliases(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = AppConfig(data_dir=tmp)
+            store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))
+            store.upsert_session("Visitor 001", track_id=1, merge_gap_minutes=15)
+            store.rename_identity("Visitor 001", "Alice")
+            store.upsert_session("Visitor 002", track_id=2, merge_gap_minutes=15)
+            store.rename_identity("Visitor 002", "Alice")
+
+            html = render_roster_page(store, config, None, {"group": ["named"]})
+
+            self.assertIn("2 merged visitor labels", html)
+            self.assertNotIn(">Visitor 001</span>", html)
+            self.assertNotIn(">Visitor 002</span>", html)
+            store.close()
+
+    def test_settings_page_includes_nonface_visitor_cleanup(self) -> None:
+        config = AppConfig()
+        html = render_settings_page(config, config, None)
+
+        self.assertIn("Remove visitors without avatars", html)
+        self.assertIn("/api/maintenance/cleanup-nonface-visitors", html)
 
     def test_roster_uses_first_snapshot_that_still_contains_face(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

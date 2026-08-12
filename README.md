@@ -135,6 +135,8 @@ Do not commit or upload `data/` or `config.json`; they may contain face snapshot
 
 If an old database already contains split visitor identities, use the `Roster` page after updating to merge temporary visitor names into the correct person. Adjacent sessions for the same identity are consolidated using `session_merge_gap_minutes`.
 
+When multiple temporary visitors are renamed to the same person, Lab Monitor stores them as aliases of that named identity. The old `Visitor xxx` labels are kept internally so historical sessions and future detections using those labels resolve to the named person. The named roster card shows these as a merged-label count instead of listing every visitor label.
+
 The root updater also ensures the monitor is running in background mode at the end of the command. If there is no GitHub update, it skips backup and redeploy work but still starts the background service when needed.
 
 ## Dashboard Pages
@@ -173,6 +175,8 @@ The cleanup command:
 
 The default low-evidence cutoff is 20 seconds. Known renamed people and visitor entries with face evidence are kept.
 
+The same no-avatar cleanup is also available from `Settings` using `Remove visitors without avatars`.
+
 ## Recognition Filtering
 
 New installs use stricter defaults to reduce non-face visitor records:
@@ -182,6 +186,8 @@ New installs use stricter defaults to reduce non-face visitor records:
 - `min_face_size_px` and `min_face_area_ratio`: reject small detections and distant false positives.
 - `min_unknown_face_observations`: require repeated high-quality unknown-face observations before creating a new visitor.
 - `face_enrollment_min_sharpness`, `face_enrollment_min_brightness`, `face_enrollment_max_brightness`: reject blurred, too-dark, or overexposed crops.
+- `face_learning_interval_seconds`: minimum interval between automatic learning samples for the same recognized identity.
+- `max_face_samples_per_identity`: maximum retained learned face samples per identity. Older samples are pruned automatically, so the model can improve without growing indefinitely.
 
 Existing deployed machines keep their current `config.json`. To use the stricter profile after updating, open `Settings`, choose `Balanced` or `Conservative`, save, then restart with:
 

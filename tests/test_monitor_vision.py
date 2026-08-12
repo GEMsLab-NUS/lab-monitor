@@ -11,7 +11,7 @@ from lab_monitor.config import AppConfig
 from lab_monitor.monitor import CameraMonitor
 from lab_monitor.storage import EventStore
 from lab_monitor.tracking import Track
-from lab_monitor.vision import is_face_box_usable, is_person_box_usable
+from lab_monitor.vision import FaceService, is_face_box_usable, is_person_box_usable
 
 
 class VisionQualityTests(unittest.TestCase):
@@ -26,6 +26,53 @@ class VisionQualityTests(unittest.TestCase):
         self.assertFalse(is_face_box_usable((20, 20, 120, 45), frame_shape))
         self.assertFalse(is_face_box_usable((0, 130, 72, 76), frame_shape))
         self.assertTrue(is_face_box_usable((240, 130, 72, 76), frame_shape))
+
+    def test_face_enrollment_prunes_old_samples_at_identity_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = FaceService(
+                root / "faces",
+                root / "enrolled_faces",
+                threshold=60.0,
+                min_face_size_px=64,
+                min_face_area_ratio=0.01,
+                min_sharpness=0.0,
+            )
+            frame = np.random.default_rng(7).integers(80, 180, size=(160, 160, 3), dtype=np.uint8)
+
+            for index in range(5):
+                self.assertTrue(
+                    service.enroll_face_crop(
+                        "Alice",
+                        frame,
+                        (30, 30, 80, 80),
+                        f"sample_{index}",
+                        max_samples=3,
+                    )
+                )
+
+            self.assertLessEqual(service.sample_count("Alice"), 3)
+
+    def test_renaming_multiple_visitor_labels_merges_face_samples(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            service = FaceService(
+                root / "faces",
+                root / "enrolled_faces",
+                threshold=60.0,
+                min_face_size_px=64,
+                min_face_area_ratio=0.01,
+                min_sharpness=0.0,
+            )
+            frame = np.random.default_rng(11).integers(80, 180, size=(160, 160, 3), dtype=np.uint8)
+            self.assertTrue(service.enroll_face_crop("Visitor 001", frame, (30, 30, 80, 80), "one"))
+            self.assertTrue(service.enroll_face_crop("Visitor 002", frame, (30, 30, 80, 80), "two"))
+
+            self.assertTrue(service.rename_label("Visitor 001", "Alice", max_samples=4))
+            self.assertTrue(service.rename_label("Visitor 002", "Alice", max_samples=4))
+
+            self.assertEqual(service.label_names(), {"Alice"})
+            self.assertEqual(service.sample_count("Alice"), 2)
 
 
 class MonitorIdentityTests(unittest.TestCase):
@@ -58,7 +105,15 @@ class MonitorIdentityTests(unittest.TestCase):
             def __init__(self) -> None:
                 self.enrolls = 0
 
-            def enroll_face_crop(self, name: str, frame: np.ndarray, face: tuple[int, int, int, int], sample: str) -> bool:
+            def enroll_face_crop(
+                self,
+                name: str,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                sample: str,
+                *,
+                max_samples: int | None = None,
+            ) -> bool:
                 self.enrolls += 1
                 return True
 

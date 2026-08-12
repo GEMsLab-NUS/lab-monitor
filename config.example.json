@@ -21,6 +21,8 @@
   "face_enrollment_min_sharpness": 18.0,
   "face_enrollment_min_brightness": 35.0,
   "face_enrollment_max_brightness": 220.0,
+  "face_learning_interval_seconds": 600,
+  "max_face_samples_per_identity": 48,
   "min_person_area_ratio": 0.015,
   "max_person_area_ratio": 0.7,
   "unknown_face_label": "unknown"

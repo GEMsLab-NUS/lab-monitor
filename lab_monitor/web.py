@@ -17,6 +17,7 @@ from .config import (
     load_config,
     save_config_updates,
 )
+from .maintenance import cleanup_nonface_visitors
 from .monitor import CameraMonitor
 from .reporting import (
     AnalyticsSummary,
@@ -675,16 +676,11 @@ class DashboardServer:
                         if monitor is not None:
                             monitor.rename_identity(old_name, new_name)
                         else:
-                            FaceService(
-                                runtime_config.faces_path,
-                                runtime_config.enrolled_faces_path,
-                                runtime_config.face_recognition_threshold,
-                                min_face_size_px=runtime_config.min_face_size_px,
-                                min_face_area_ratio=runtime_config.min_face_area_ratio,
-                                min_sharpness=runtime_config.face_enrollment_min_sharpness,
-                                min_brightness=runtime_config.face_enrollment_min_brightness,
-                                max_brightness=runtime_config.face_enrollment_max_brightness,
-                            ).rename_label(old_name, new_name)
+                            create_face_service(runtime_config).rename_label(
+                                old_name,
+                                new_name,
+                                max_samples=runtime_config.max_face_samples_per_identity,
+                            )
                     if return_to.startswith("/") and not return_to.startswith("//"):
                         self._redirect(return_to)
                     else:
@@ -701,16 +697,7 @@ class DashboardServer:
                             for item in names_to_delete:
                                 monitor.delete_identity(str(item))
                         else:
-                            face_service = FaceService(
-                                runtime_config.faces_path,
-                                runtime_config.enrolled_faces_path,
-                                runtime_config.face_recognition_threshold,
-                                min_face_size_px=runtime_config.min_face_size_px,
-                                min_face_area_ratio=runtime_config.min_face_area_ratio,
-                                min_sharpness=runtime_config.face_enrollment_min_sharpness,
-                                min_brightness=runtime_config.face_enrollment_min_brightness,
-                                max_brightness=runtime_config.face_enrollment_max_brightness,
-                            )
+                            face_service = create_face_service(runtime_config)
                             for item in names_to_delete:
                                 face_service.delete_label(str(item))
                     if self._wants_json():
@@ -730,6 +717,18 @@ class DashboardServer:
                         self._redirect(f"/settings?{urlencode({'error': str(exc)})}")
                         return
                     self._redirect("/settings?saved=1")
+                    return
+                if parsed.path == "/api/maintenance/cleanup-nonface-visitors":
+                    face_service = create_face_service(runtime_config)
+                    result = cleanup_nonface_visitors(store, runtime_config.unknown_identity_prefix, face_service)
+                    for item in result["names"]:
+                        if monitor is not None:
+                            monitor.delete_identity(str(item))
+                        else:
+                            face_service.delete_label(str(item))
+                    self._redirect(
+                        f"/settings?{urlencode({'cleaned': str(result['deleted_people'])})}"
+                    )
                     return
                 self.send_error(HTTPStatus.NOT_FOUND)
 
@@ -865,7 +864,7 @@ def render_roster_page(
         notice = '<div class="notice success">Roster entry deleted.</div>'
     saved_return = f"/roster?{urlencode({'group': group, 'page': page, 'saved': '1'})}"
     deleted_return = f"/roster?{urlencode({'group': group, 'page': page, 'deleted': '1'})}"
-    cards = "".join(render_roster_card(person, saved_return, deleted_return) for person in page_people)
+    cards = "".join(render_roster_card(person, saved_return, deleted_return, config) for person in page_people)
     if not cards:
         cards = '<div class="empty">No identities on this page.</div>'
     roster_tabs = render_roster_tabs(group, len(unnamed_people), len(named_people))
@@ -985,6 +984,8 @@ def render_settings_page(
     notice = ""
     if query.get("saved", [""])[0] == "1":
         notice = '<div class="notice success">Settings saved. Restart the background service for changes to take effect.</div>'
+    if query.get("cleaned", [""])[0]:
+        notice = f'<div class="notice success">Removed {escape(query["cleaned"][0])} visitor record(s) without verified avatars.</div>'
     if query.get("error", [""])[0]:
         notice = f'<div class="notice error">{escape(query["error"][0])}</div>'
     main = f"""
@@ -1014,6 +1015,16 @@ def render_settings_page(
                 </div>
               </div>
             </section>
+            <section class="panel">
+              <div class="panel-header">
+                <h3 class="panel-title">Roster maintenance</h3>
+                <span class="panel-note">Runtime cleanup</span>
+              </div>
+              <div class="form-actions">
+                <button class="button" type="submit" formaction="/api/maintenance/cleanup-nonface-visitors" formmethod="post">Remove visitors without avatars</button>
+                <span class="panel-note">Deletes unnamed visitor records whose retained snapshots do not contain a verified face.</span>
+              </div>
+            </section>
             {render_settings_groups(saved_config)}
           </div>
           <div class="form-actions">
@@ -1024,6 +1035,19 @@ def render_settings_page(
       </main>
     """
     return render_shell("Settings", "settings", "", "", main, runtime_config, monitor, wide=True)
+
+
+def create_face_service(config: AppConfig) -> FaceService:
+    return FaceService(
+        config.faces_path,
+        config.enrolled_faces_path,
+        config.face_recognition_threshold,
+        min_face_size_px=config.min_face_size_px,
+        min_face_area_ratio=config.min_face_area_ratio,
+        min_sharpness=config.face_enrollment_min_sharpness,
+        min_brightness=config.face_enrollment_min_brightness,
+        max_brightness=config.face_enrollment_max_brightness,
+    )
 
 
 def render_shell(
@@ -1194,16 +1218,7 @@ def assign_roster_snapshots(people: list[RosterPerson], store: EventStore, confi
     if not people:
         return
     try:
-        face_service = FaceService(
-            config.faces_path,
-            config.enrolled_faces_path,
-            config.face_recognition_threshold,
-            min_face_size_px=config.min_face_size_px,
-            min_face_area_ratio=config.min_face_area_ratio,
-            min_sharpness=config.face_enrollment_min_sharpness,
-            min_brightness=config.face_enrollment_min_brightness,
-            max_brightness=config.face_enrollment_max_brightness,
-        )
+        face_service = create_face_service(config)
     except RuntimeError:
         face_service = None
     for person in people:
@@ -1284,16 +1299,14 @@ def render_roster_pager(group: str, page: int, total_pages: int, total_items: in
     return f'<div class="pager"><span>{summary}</span><div class="pager-links">{prev_link}{"".join(links)}{next_link}</div></div>'
 
 
-def render_roster_card(person: RosterPerson, saved_return: str, deleted_return: str) -> str:
+def render_roster_card(person: RosterPerson, saved_return: str, deleted_return: str, config: AppConfig) -> str:
     initials = "".join(part[:1] for part in person.name.split()[:2]).upper() or "ID"
     media = (
         f'<img class="roster-photo" src="{escape(person.snapshot_url)}" alt="{escape(person.name)} snapshot" loading="lazy">'
         if person.snapshot_url
         else f'<div class="roster-avatar">{escape(initials)}</div>'
     )
-    aliases = "".join(f'<span class="alias-chip">{escape(alias)}</span>' for alias in person.aliases)
-    if not aliases:
-        aliases = '<span class="alias-chip">No aliases</span>'
+    aliases = render_alias_chips(person, config)
     last_seen = format_ts_for_display(person.last_seen_ts) if person.last_seen_ts else "Never"
     score_label = f"Face {person.face_score}%" if person.snapshot_url else "No verified face"
     return f"""
@@ -1324,6 +1337,20 @@ def render_roster_card(person: RosterPerson, saved_return: str, deleted_return: 
         </div>
       </article>
     """
+
+
+def render_alias_chips(person: RosterPerson, config: AppConfig) -> str:
+    visitor_aliases = [alias for alias in person.aliases if is_unnamed_identity(alias, config)]
+    visible_aliases = [alias for alias in person.aliases if not is_unnamed_identity(alias, config)]
+    chips = [f'<span class="alias-chip">{escape(alias)}</span>' for alias in visible_aliases[:4]]
+    if visitor_aliases and not is_unnamed_identity(person.name, config):
+        chips.insert(0, f'<span class="alias-chip">{len(visitor_aliases)} merged visitor labels</span>')
+    elif visitor_aliases:
+        chips.extend(f'<span class="alias-chip">{escape(alias)}</span>' for alias in visitor_aliases[:4])
+    hidden_count = max(0, len(visible_aliases) - 4)
+    if hidden_count:
+        chips.append(f'<span class="alias-chip">+{hidden_count} more</span>')
+    return "".join(chips) if chips else '<span class="alias-chip">No aliases</span>'
 
 
 def is_unnamed_identity(name: str, config: AppConfig) -> bool:
