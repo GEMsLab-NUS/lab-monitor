@@ -234,6 +234,7 @@ a { color: inherit; }
 }
 .live-stage::after { content: ""; position: absolute; inset: 0; z-index: 3; pointer-events: none; background: linear-gradient(180deg, rgba(255,255,255,.04), transparent 34%, rgba(0,0,0,.24)); }
 .live-frame { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; z-index: 1; }
+.live-frame[hidden] { display: none; }
 .live-empty { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; color: var(--muted); font-size: 14px; background: radial-gradient(circle at center, rgba(37,99,235,.12), transparent 42%); }
 .live-empty[hidden] { display: none; }
 .live-box {
@@ -763,10 +764,11 @@ DASHBOARD_JS = """
     setText('[data-live-updated]', payload.has_frame ? new Date().toLocaleTimeString() : 'Waiting');
     setText('[data-live-error]', payload.last_error || 'None');
     renderLiveTracks(payload.tracks || []);
-    if (liveEmpty) liveEmpty.hidden = Boolean(payload.has_frame);
     if (payload.has_frame && liveFrame) {
       liveFrame.src = `/api/live/frame?t=${Date.now()}`;
     } else {
+      if (liveFrame) liveFrame.hidden = true;
+      if (liveEmpty) liveEmpty.hidden = false;
       drawLiveBoxes(payload);
     }
   };
@@ -784,7 +786,11 @@ DASHBOARD_JS = """
   };
 
   if (liveFrame) {
-    liveFrame.addEventListener('load', () => drawLiveBoxes(lastLivePayload));
+    liveFrame.addEventListener('load', () => {
+      liveFrame.hidden = false;
+      if (liveEmpty) liveEmpty.hidden = true;
+      drawLiveBoxes(lastLivePayload);
+    });
   }
   if (liveStage) {
     window.addEventListener('resize', () => drawLiveBoxes(lastLivePayload));
@@ -1245,7 +1251,7 @@ def render_live_page(config: AppConfig, monitor: CameraMonitor | None) -> str:
         <div class="content-body">
           <div class="live-shell">
             <section class="live-stage" data-live-stage>
-              <img class="live-frame" data-live-frame alt="Live camera frame">
+              <img class="live-frame" data-live-frame alt="Live camera frame" hidden>
               <div class="live-empty" data-live-empty>Waiting for camera feed</div>
               <div class="live-pulse"></div>
             </section>
@@ -1561,7 +1567,6 @@ def render_shell(
   {refresh_meta}
   <title>Lab Monitor - {escape(page_title)}</title>
   <style>{DASHBOARD_CSS}</style>
-  <script defer>{DASHBOARD_JS}</script>
 </head>
 <body>
   <div class="shell">
@@ -1582,6 +1587,7 @@ def render_shell(
       {main}
     </div>
   </div>
+  <script>{DASHBOARD_JS}</script>
 </body>
 </html>"""
 
