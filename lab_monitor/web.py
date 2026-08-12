@@ -313,6 +313,11 @@ a { color: inherit; }
 .notice { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface-subtle); color: var(--muted); }
 .notice.success { border-color: var(--success); color: var(--success); background: var(--success-soft); }
 .notice.error { border-color: var(--danger); color: var(--danger); background: var(--danger-soft); }
+.maintenance-progress { display: grid; gap: 8px; min-width: 260px; flex: 1; }
+.maintenance-progress[hidden] { display: none; }
+.progress-meta { display: flex; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
+.progress-track { height: 9px; overflow: hidden; border-radius: 999px; border: 1px solid var(--line-soft); background: var(--surface-subtle); }
+.progress-fill { width: 0%; height: 100%; border-radius: inherit; background: var(--success); transition: width .25s ease; }
 .roster-tabs { display: inline-flex; gap: 4px; padding: 3px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface-subtle); }
 .roster-tabs a { display: inline-flex; align-items: center; gap: 8px; min-height: 34px; padding: 0 12px; border-radius: 7px; color: var(--muted); text-decoration: none; font-size: 13px; font-weight: 650; }
 .roster-tabs a.active { color: var(--text); background: var(--surface); box-shadow: var(--shadow-sm); }
@@ -529,6 +534,79 @@ DASHBOARD_JS = """
     }
   });
 
+  const updateMaintenanceProgress = (state) => {
+    const panel = document.querySelector('[data-maintenance-progress]');
+    if (!panel) return;
+    const progress = state.progress || {};
+    const running = Boolean(state.running);
+    const result = state.last_result;
+    const error = state.last_error;
+    const percent = Number(progress.percent || 0);
+    const phase = error
+      ? `Failed: ${error}`
+      : running
+        ? (progress.phase || 'Running cleanup')
+        : result
+          ? `Complete: removed ${result.deleted_people || 0} visitor record(s)`
+          : (progress.phase || 'Idle');
+    panel.hidden = !(running || result || error);
+    panel.querySelector('[data-maintenance-phase]').textContent = phase;
+    panel.querySelector('[data-maintenance-count]').textContent = progress.total
+      ? `${progress.current || 0}/${progress.total}`
+      : '';
+    panel.querySelector('[data-maintenance-fill]').style.width = `${running ? percent : (result ? 100 : percent)}%`;
+    const button = document.querySelector('[data-maintenance-submit]');
+    if (button) button.disabled = running;
+    return running;
+  };
+
+  const pollMaintenance = async () => {
+    try {
+      const response = await fetch('/api/maintenance/status', { headers: { 'Accept': 'application/json' } });
+      if (!response.ok) return false;
+      const state = await response.json();
+      return updateMaintenanceProgress(state);
+    } catch (error) {
+      return false;
+    }
+  };
+
+  const scheduleMaintenancePoll = () => {
+    const tick = async () => {
+      const running = await pollMaintenance();
+      if (running) window.setTimeout(tick, 1000);
+    };
+    tick();
+  };
+
+  document.addEventListener('submit', async (event) => {
+    const form = event.target.closest('.maintenance-form');
+    if (!form) return;
+    event.preventDefault();
+    const button = form.querySelector('button');
+    if (button) button.disabled = true;
+    updateMaintenanceProgress({ running: true, progress: { phase: 'Starting cleanup', current: 0, total: 1, percent: 0 } });
+    try {
+      const response = await fetch(form.action, {
+        method: 'POST',
+        body: new FormData(form),
+        headers: {
+          'Accept': 'application/json',
+          'X-Requested-With': 'fetch'
+        }
+      });
+      if (!response.ok) throw new Error(`Cleanup failed: ${response.status}`);
+      scheduleMaintenancePoll();
+      showRosterNotice('Roster cleanup started in the background.');
+    } catch (error) {
+      form.submit();
+    }
+  });
+
+  if (document.querySelector('[data-maintenance-progress]')) {
+    scheduleMaintenancePoll();
+  }
+
   document.addEventListener('click', (event) => {
     const chip = event.target.closest('.session-chip[data-session-id]');
     if (!chip) {
@@ -569,6 +647,7 @@ class DashboardServer:
             "running": False,
             "last_result": None,
             "last_error": None,
+            "progress_file": None,
         }
         self._server = self._build_server()
         self._thread: Thread | None = None
@@ -636,6 +715,9 @@ class DashboardServer:
                     return
                 if parsed.path == "/api/stats":
                     self._send_json(build_stats_payload(store, monitor))
+                    return
+                if parsed.path == "/api/maintenance/status":
+                    self._send_json(self._maintenance_snapshot())
                     return
                 if parsed.path == "/api/export/sessions.csv":
                     start, end = parse_date_range(query)
@@ -738,6 +820,9 @@ class DashboardServer:
                 if parsed.path == "/api/maintenance/cleanup-nonface-visitors":
                     started = self._start_nonface_cleanup()
                     status = "started" if started else "running"
+                    if self._wants_json():
+                        self._send_json({"ok": True, "status": status, "maintenance": self._maintenance_snapshot()})
+                        return
                     self._redirect(f"/settings?{urlencode({'maintenance': status})}")
                     return
                 self.send_error(HTTPStatus.NOT_FOUND)
@@ -762,8 +847,11 @@ class DashboardServer:
                 return "application/json" in accept or requested_with.lower() == "fetch"
 
             def _maintenance_snapshot(self) -> dict[str, Any]:
-                with self.server.dashboard._maintenance_lock:  # type: ignore[attr-defined]
-                    return dict(self.server.dashboard._maintenance_state)  # type: ignore[attr-defined]
+                dashboard = self.server.dashboard  # type: ignore[attr-defined]
+                with dashboard._maintenance_lock:
+                    state = dict(dashboard._maintenance_state)
+                state["progress"] = dashboard._read_maintenance_progress()
+                return state
 
             def _start_nonface_cleanup(self) -> bool:
                 dashboard = self.server.dashboard  # type: ignore[attr-defined]
@@ -774,6 +862,7 @@ class DashboardServer:
                         "running": True,
                         "last_result": None,
                         "last_error": None,
+                        "progress_file": str(dashboard._maintenance_progress_path()),
                     }
                 worker = Thread(
                     target=dashboard._run_nonface_cleanup,
@@ -839,6 +928,10 @@ class DashboardServer:
 
     def _run_nonface_cleanup(self) -> None:
         try:
+            progress_path = self._maintenance_progress_path()
+            self._write_maintenance_progress(
+                {"phase": "Starting cleanup", "current": 0, "total": 1, "deleted_people": 0}
+            )
             completed = subprocess.run(
                 [
                     sys.executable,
@@ -851,6 +944,8 @@ class DashboardServer:
                     "--delete-nonface-visitors",
                     "--min-total-seconds",
                     "20",
+                    "--progress-file",
+                    str(progress_path),
                 ],
                 cwd=str(Path(self.config_path).resolve().parent),
                 capture_output=True,
@@ -867,6 +962,7 @@ class DashboardServer:
                     "running": False,
                     "last_result": result,
                     "last_error": None,
+                    "progress_file": str(progress_path),
                 }
         except Exception as exc:  # noqa: BLE001
             with self._maintenance_lock:
@@ -874,7 +970,31 @@ class DashboardServer:
                     "running": False,
                     "last_result": None,
                     "last_error": str(exc),
+                    "progress_file": str(self._maintenance_progress_path()),
                 }
+
+    def _maintenance_progress_path(self) -> Path:
+        return self.config.data_path / "maintenance" / "cleanup-nonface-visitors.json"
+
+    def _write_maintenance_progress(self, payload: dict[str, Any]) -> None:
+        progress_path = self._maintenance_progress_path()
+        progress_path.parent.mkdir(parents=True, exist_ok=True)
+        progress_path.write_text(json.dumps(payload, ensure_ascii=True) + "\n", encoding="utf-8")
+
+    def _read_maintenance_progress(self) -> dict[str, Any]:
+        progress_path = self._maintenance_progress_path()
+        if not progress_path.exists():
+            return {"phase": "Idle", "current": 0, "total": 0, "percent": 0}
+        try:
+            progress = json.loads(progress_path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            return {"phase": "Reading progress", "current": 0, "total": 0, "percent": 0}
+        total = int(progress.get("total") or 0)
+        current = int(progress.get("current") or 0)
+        progress["percent"] = 100 if total <= 0 and progress.get("phase") == "Complete" else (
+            min(100, max(0, round(current * 100 / total))) if total > 0 else 0
+        )
+        return progress
 
 
 def render_calendar_page(
@@ -1073,9 +1193,25 @@ def render_settings_page(
           </div>
           <div class="content-subtitle">Current runtime port {runtime_config.web_port}</div>
         </div>
-        <form method="post" action="/api/settings">
-          <div class="content-body">
-            {notice}
+        <div class="content-body">
+          {notice}
+          <section class="panel">
+            <div class="panel-header">
+              <h3 class="panel-title">Roster maintenance</h3>
+              <span class="panel-note">Runtime cleanup</span>
+            </div>
+            <div class="form-actions">
+              <form class="maintenance-form" method="post" action="/api/maintenance/cleanup-nonface-visitors">
+                <button class="button" type="submit" data-maintenance-submit {"disabled" if maintenance_state.get("running") else ""}>Remove visitors without avatars</button>
+              </form>
+              <div class="maintenance-progress" data-maintenance-progress {"hidden" if not maintenance_state.get("running") and not maintenance_state.get("last_result") and not maintenance_state.get("last_error") else ""}>
+                <div class="progress-meta"><span data-maintenance-phase>Idle</span><span data-maintenance-count></span></div>
+                <div class="progress-track"><div class="progress-fill" data-maintenance-fill></div></div>
+              </div>
+              <span class="panel-note">Runs in the background. Named identities are not removed.</span>
+            </div>
+          </section>
+          <form method="post" action="/api/settings">
             <section class="panel">
               <div class="panel-header">
                 <h3 class="panel-title">Work profile</h3>
@@ -1091,23 +1227,13 @@ def render_settings_page(
                 </div>
               </div>
             </section>
-            <section class="panel">
-              <div class="panel-header">
-                <h3 class="panel-title">Roster maintenance</h3>
-                <span class="panel-note">Runtime cleanup</span>
-              </div>
-              <div class="form-actions">
-                <button class="button" type="submit" formaction="/api/maintenance/cleanup-nonface-visitors" formmethod="post" {"disabled" if maintenance_state.get("running") else ""}>Remove visitors without avatars</button>
-                <span class="panel-note">Runs in the background. Restart after cleanup to reload the face model.</span>
-              </div>
-            </section>
             {render_settings_groups(saved_config)}
-          </div>
-          <div class="form-actions">
-            <button class="button primary" type="submit">Save settings</button>
-            <span class="panel-note">Changes are persisted only. Restart required.</span>
-          </div>
-        </form>
+            <div class="form-actions">
+              <button class="button primary" type="submit">Save settings</button>
+              <span class="panel-note">Changes are persisted only. Restart required.</span>
+            </div>
+          </form>
+        </div>
       </main>
     """
     return render_shell("Settings", "settings", "", "", main, runtime_config, monitor, wide=True)

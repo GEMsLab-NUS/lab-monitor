@@ -9,6 +9,7 @@ import time
 import unittest
 from unittest.mock import patch
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 from lab_monitor.config import AppConfig, load_config, save_config_updates, validate_config_updates
 from lab_monitor.reporting import build_analytics, sessions_to_csv, sessions_to_json_payload
@@ -328,6 +329,7 @@ class StorageTests(unittest.TestCase):
         self.assertIn("Remove visitors without avatars", html)
         self.assertIn("/api/maintenance/cleanup-nonface-visitors", html)
         self.assertIn("Runs in the background", html)
+        self.assertIn("data-maintenance-progress", html)
 
     def test_settings_cleanup_post_returns_to_settings_and_keeps_server_alive(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -352,12 +354,43 @@ class StorageTests(unittest.TestCase):
                 self.assertIn("Settings", html)
                 health = urlopen(f"http://127.0.0.1:{port}/api/stats", timeout=10).read().decode("utf-8")
                 self.assertIn("storage", health)
+                status = urlopen(f"http://127.0.0.1:{port}/api/maintenance/status", timeout=10).read().decode("utf-8")
+                self.assertIn("progress", status)
                 for _ in range(50):
                     with server._maintenance_lock:
                         running = bool(server._maintenance_state["running"])
                     if not running:
                         break
                     time.sleep(0.1)
+            finally:
+                server.shutdown()
+                store.close()
+
+    def test_settings_cleanup_post_can_start_with_json_without_navigation(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp) / "data"
+            config_path = Path(tmp) / "config.json"
+            config = AppConfig(data_dir=str(data_dir), web_port=0)
+            config_path.write_text(json.dumps(config.to_dict()), encoding="utf-8")
+            store = EventStore(config.database_path, config.data_path)
+            server = DashboardServer(config, store, None, str(config_path))
+            server.start_background()
+            port = int(server._server.server_address[1])
+            try:
+                request = Request(
+                    f"http://127.0.0.1:{port}/api/maintenance/cleanup-nonface-visitors",
+                    data=b"",
+                    method="POST",
+                    headers={"Accept": "application/json", "X-Requested-With": "fetch"},
+                )
+                response = urlopen(request, timeout=10)
+                payload = response.read().decode("utf-8")
+
+                self.assertEqual(response.status, 200)
+                self.assertIn('"ok": true', payload)
+                self.assertIn('"progress"', payload)
+            except HTTPError as exc:
+                self.fail(f"maintenance endpoint returned {exc.code}: {exc.read().decode('utf-8')}")
             finally:
                 server.shutdown()
                 store.close()

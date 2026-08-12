@@ -48,6 +48,7 @@ def build_parser() -> argparse.ArgumentParser:
     clean_roster.add_argument("--include-low-evidence", action="store_true", help="Also delete short visitor sessions without face evidence.")
     clean_roster.add_argument("--delete-nonface-visitors", action="store_true", help="Also delete temporary visitors whose snapshots do not contain a verifiable face.")
     clean_roster.add_argument("--min-total-seconds", type=float, default=20.0, help="Low-evidence duration cutoff.")
+    clean_roster.add_argument("--progress-file", help="Write cleanup progress as JSON to this file.")
     clean_roster.add_argument("--dry-run", action="store_true", help="Show what would be removed without deleting.")
     clean_roster.set_defaults(func=cmd_clean_roster)
 
@@ -144,6 +145,7 @@ def cmd_clean_roster(args: argparse.Namespace) -> int:
             delete_nonface_visitors=args.delete_nonface_visitors,
             min_total_seconds=args.min_total_seconds,
             face_service=face_service,
+            progress_path=Path(args.progress_file) if args.progress_file else None,
         )
     else:
         result = store.cleanup_roster(
@@ -152,7 +154,12 @@ def cmd_clean_roster(args: argparse.Namespace) -> int:
             min_total_seconds=args.min_total_seconds,
         )
         if args.delete_nonface_visitors:
-            nonface_result = cleanup_nonface_visitors(store, config.unknown_identity_prefix, face_service)
+            nonface_result = cleanup_nonface_visitors(
+                store,
+                config.unknown_identity_prefix,
+                face_service,
+                progress_path=Path(args.progress_file) if args.progress_file else None,
+            )
             result["deleted_people"] += int(nonface_result["deleted_people"])
             result["deleted_identities"] += int(nonface_result["deleted_identities"])
             result["deleted_sessions"] += int(nonface_result["deleted_sessions"])
@@ -173,6 +180,7 @@ def preview_roster_cleanup(
     delete_nonface_visitors: bool = False,
     min_total_seconds: float,
     face_service: FaceService | None = None,
+    progress_path: Path | None = None,
 ) -> dict[str, object]:
     sessions = store.list_sessions(5000)
     aliases = store.list_identity_aliases()
@@ -196,7 +204,10 @@ def preview_roster_cleanup(
                 names.append(canonical)
                 continue
         if delete_nonface_visitors and alias_count == 0 and person_sessions and face_service is not None:
-            if not any(session_snapshot_has_face(store, item, face_service) for item in person_sessions):
+            if not any(
+                session_snapshot_has_face(store, item, face_service, progress_path=progress_path)
+                for item in person_sessions
+            ):
                 names.append(canonical)
     return {"dry_run": True, "deleted_people": len(names), "names": names}
 

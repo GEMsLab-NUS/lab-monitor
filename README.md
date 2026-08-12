@@ -175,7 +175,9 @@ The cleanup command:
 
 The default low-evidence cutoff is 20 seconds. Known renamed people and visitor entries with face evidence are kept.
 
-The same no-avatar cleanup is also available from `Settings` using `Remove visitors without avatars`.
+The same no-avatar cleanup is also available from `Settings` using `Remove visitors without avatars`. The Settings action starts a background cleanup job and shows progress without blocking the dashboard.
+
+`clean-head-data.cmd` is safe to run directly on a deployed computer. It only removes unmerged temporary `Visitor xxx` records selected by the cleanup rules. Named identities and visitor labels that have already been renamed or merged into a named identity are skipped, including their retained face samples.
 
 ## Recognition Filtering
 
