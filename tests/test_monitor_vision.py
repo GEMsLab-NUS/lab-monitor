@@ -115,6 +115,14 @@ class MonitorIdentityTests(unittest.TestCase):
             def is_enrollable_face(self, frame: np.ndarray, face: tuple[int, int, int, int]) -> bool:
                 return True
 
+            def recognize_face(
+                self,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                threshold: float | None = None,
+            ) -> tuple[str | None, float | None]:
+                return None, None
+
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
             config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=60)
@@ -227,6 +235,54 @@ class MonitorIdentityTests(unittest.TestCase):
             self.assertEqual(identity, "Alice")
             self.assertEqual(confidence, 42.0)
             self.assertEqual(used_face, face)
+            store.close()
+
+    def test_face_identity_seen_before_dwell_is_used_when_logging_later(self) -> None:
+        class FakeFaceService:
+            def __init__(self) -> None:
+                self.enrolls = 0
+
+            def enroll_face_crop(
+                self,
+                name: str,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                sample: str,
+                *,
+                max_samples: int | None = None,
+            ) -> bool:
+                self.enrolls += 1
+                return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=10)
+            store = EventStore(config.database_path, config.data_path)
+            monitor = CameraMonitor(config, store)
+            fake_face_service = FakeFaceService()
+            monitor._face_service = fake_face_service  # type: ignore[assignment]
+            monitor._identify_face = lambda frame, face: ("Alice", 42.0)  # type: ignore[method-assign]
+            now = monotonic()
+            monitor._tracker.tracks[1] = Track(
+                id=1,
+                bbox=(180, 80, 240, 340),
+                centroid=(300.0, 250.0),
+                first_seen=now - 5,
+                last_seen=now,
+            )
+            frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+            face = (240, 130, 80, 86)
+
+            monitor._observe_face_identities(frame, [face])
+            monitor._observe_face_identities(frame, [face])
+            track = monitor._tracker.tracks[1]
+            track.first_seen = monotonic() - 20
+            monitor._record_track_behaviors(frame, [])
+
+            sessions = store.list_sessions()
+            self.assertEqual(len(sessions), 1)
+            self.assertEqual(sessions[0].identity_name, "Alice")
+            self.assertEqual(fake_face_service.enrolls, 1)
             store.close()
 
     def test_unknown_face_requires_repeated_observations_before_enrollment(self) -> None:

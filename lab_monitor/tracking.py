@@ -23,6 +23,9 @@ class Track:
     last_name: str | None = None
     unknown_face_observations: int = 0
     identity_observations: dict[str, int] = field(default_factory=dict)
+    last_face_box: BBox | None = None
+    last_face_confidence: float | None = None
+    last_face_seen: float | None = None
 
 
 class CentroidTracker:

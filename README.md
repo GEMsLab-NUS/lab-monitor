@@ -191,6 +191,8 @@ New installs use stricter defaults to reduce non-face visitor records:
 - `face_learning_interval_seconds`: minimum interval between automatic learning samples for the same recognized identity.
 - `max_face_samples_per_identity`: maximum retained learned face samples per identity. Older samples are pruned automatically, so the model can improve without growing indefinitely.
 
+Face identity is captured before dwell logging. When a usable face appears, Lab Monitor immediately tries recognition and bounded learning for that track; the occupancy session is still written only after `min_dwell_seconds`. This avoids missing the current user when their face is visible briefly and then turns away or keeps moving.
+
 Existing deployed machines keep their current `config.json`. To use the stricter profile after updating, open `Settings`, choose `Balanced` or `Conservative`, save, then restart with:
 
 ```powershell

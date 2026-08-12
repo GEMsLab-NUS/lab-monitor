@@ -15,7 +15,7 @@ class AppConfig:
     min_dwell_seconds: int = 60
     session_merge_gap_minutes: int = 15
     unknown_identity_prefix: str = "Visitor"
-    poll_interval_ms: int = 350
+    poll_interval_ms: int = 250
     min_event_interval_seconds: int = 20
     presence_heartbeat_seconds: int = 300
     stationary_seconds: int = 120
@@ -91,7 +91,7 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
     "Balanced": {
         "min_dwell_seconds": 60,
         "session_merge_gap_minutes": 15,
-        "poll_interval_ms": 350,
+        "poll_interval_ms": 250,
         "stationary_seconds": 120,
         "max_tracking_distance_px": 120,
         "face_recognition_threshold": 62.0,
@@ -110,7 +110,7 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
     "Responsive": {
         "min_dwell_seconds": 20,
         "session_merge_gap_minutes": 10,
-        "poll_interval_ms": 180,
+        "poll_interval_ms": 120,
         "stationary_seconds": 60,
         "max_tracking_distance_px": 160,
         "face_recognition_threshold": 70.0,

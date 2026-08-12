@@ -6,7 +6,7 @@
   "min_dwell_seconds": 60,
   "session_merge_gap_minutes": 15,
   "unknown_identity_prefix": "Visitor",
-  "poll_interval_ms": 350,
+  "poll_interval_ms": 250,
   "min_event_interval_seconds": 20,
   "presence_heartbeat_seconds": 300,
   "stationary_seconds": 120,

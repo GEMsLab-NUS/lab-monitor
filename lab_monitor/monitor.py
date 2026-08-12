@@ -144,9 +144,9 @@ class CameraMonitor:
                     details={"visible_seconds": round(monotonic() - track.first_seen, 1)},
                 )
 
+        self._observe_face_identities(frame, face_boxes)
         self._record_population_events(frame)
         self._record_track_behaviors(frame, face_boxes)
-        self._refresh_face_identity(frame, face_boxes)
         self._update_live_state(frame, face_boxes)
 
     def live_snapshot(self) -> dict[str, object]:
@@ -240,36 +240,14 @@ class CameraMonitor:
                     details={"seconds": round(now - track.stationary_since, 1)},
                 )
 
-    def _refresh_face_identity(self, frame: np.ndarray, face_boxes: list[BBox]) -> None:
+    def _observe_face_identities(self, frame: np.ndarray, face_boxes: list[BBox]) -> None:
         for face in face_boxes:
             track = self._track_for_face(face)
-            if track is None or track.dwell_confirmed_at is None:
+            if track is None:
                 continue
             name, confidence, matched = self._stable_identify_track(track, frame, face)
             if name:
-                track.last_name = name
-                if track.session_id is not None:
-                    snapshot_path = None
-                    if self._should_emit(track, f"face_snapshot:{track.session_id}", interval_seconds=300):
-                        snapshot_path = self._save_snapshot(frame, face, "face", track.id)
-                    if self._should_emit(
-                        track,
-                        f"face_learn:{name}",
-                        interval_seconds=self.config.face_learning_interval_seconds,
-                    ):
-                        self._face_service.enroll_face_crop(
-                            name,
-                            frame,
-                            face,
-                            f"learn_track{track.id}_{int(monotonic() * 1000)}",
-                            max_samples=self.config.max_face_samples_per_identity,
-                        )
-                    self.store.update_session(
-                        track.session_id,
-                        identity_name=name,
-                        confidence=confidence,
-                        snapshot_path=snapshot_path,
-                    )
+                self._apply_face_identity(track, name, confidence, frame, face)
                 continue
             if matched:
                 continue
@@ -280,16 +258,43 @@ class CameraMonitor:
                 track.last_name = self.store.allocate_identity(self.config.unknown_identity_prefix)
             else:
                 track.last_name = self.store.resolve_identity(track.last_name)
-            if self._should_emit(track, f"auto_enroll:{track.last_name}", interval_seconds=3600):
-                self._face_service.enroll_face_crop(
-                    track.last_name,
-                    frame,
-                    face,
-                    f"track{track.id}_{int(monotonic() * 1000)}",
-                    max_samples=self.config.max_face_samples_per_identity,
-                )
-            if track.session_id is not None:
-                self.store.update_session(track.session_id, identity_name=track.last_name, confidence=confidence)
+            self._apply_face_identity(track, track.last_name, confidence, frame, face, force_learn=True)
+
+    def _apply_face_identity(
+        self,
+        track: Track,
+        name: str,
+        confidence: float | None,
+        frame: np.ndarray,
+        face: BBox,
+        *,
+        force_learn: bool = False,
+    ) -> None:
+        track.last_name = self.store.resolve_identity(name)
+        track.last_face_box = face
+        track.last_face_confidence = confidence
+        track.last_face_seen = monotonic()
+        learn_key = f"auto_enroll:{track.last_name}" if force_learn else f"face_learn:{track.last_name}"
+        learn_interval = 3600 if force_learn else self.config.face_learning_interval_seconds
+        if self._should_emit(track, learn_key, interval_seconds=learn_interval):
+            self._face_service.enroll_face_crop(
+                track.last_name,
+                frame,
+                face,
+                f"learn_track{track.id}_{int(monotonic() * 1000)}",
+                max_samples=self.config.max_face_samples_per_identity,
+            )
+        if track.session_id is None:
+            return
+        snapshot_path = None
+        if self._should_emit(track, f"face_snapshot:{track.session_id}", interval_seconds=300):
+            snapshot_path = self._save_snapshot(frame, face, "face", track.id)
+        self.store.update_session(
+            track.session_id,
+            identity_name=track.last_name,
+            confidence=confidence,
+            snapshot_path=snapshot_path,
+        )
 
     def _resolve_track_identity(
         self,
@@ -300,6 +305,8 @@ class CameraMonitor:
         for face in face_boxes:
             if not face_inside_person(face, track.bbox):
                 continue
+            if track.last_name:
+                return self.store.resolve_identity(track.last_name), track.last_face_confidence, face
             name, confidence, matched = self._stable_identify_track(track, frame, face)
             if name:
                 return name, confidence, face
@@ -322,7 +329,7 @@ class CameraMonitor:
             )
             return identity, confidence, face
         if track.last_name:
-            return self.store.resolve_identity(track.last_name), None, None
+            return self.store.resolve_identity(track.last_name), track.last_face_confidence, None
         return None, None, None
 
     def _stable_identify_track(
