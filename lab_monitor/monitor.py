@@ -252,8 +252,6 @@ class CameraMonitor:
             if matched:
                 continue
             track.unknown_face_observations += 1
-            if track.unknown_face_observations < self.config.min_unknown_face_observations:
-                continue
             if track.last_name is None:
                 track.last_name = self.store.allocate_identity(self.config.unknown_identity_prefix)
             else:
@@ -275,7 +273,7 @@ class CameraMonitor:
         track.last_face_confidence = confidence
         track.last_face_seen = monotonic()
         learn_key = f"auto_enroll:{track.last_name}" if force_learn else f"face_learn:{track.last_name}"
-        learn_interval = 3600 if force_learn else self.config.face_learning_interval_seconds
+        learn_interval = self.config.face_learning_interval_seconds
         if self._should_emit(track, learn_key, interval_seconds=learn_interval):
             self._face_service.enroll_face_crop(
                 track.last_name,
@@ -313,20 +311,12 @@ class CameraMonitor:
             if matched:
                 return None, confidence, None
             track.unknown_face_observations += 1
-            if track.unknown_face_observations < self.config.min_unknown_face_observations:
-                return None, confidence, None
             identity = (
                 self.store.resolve_identity(track.last_name)
                 if track.last_name
                 else self.store.allocate_identity(self.config.unknown_identity_prefix)
             )
-            self._face_service.enroll_face_crop(
-                identity,
-                frame,
-                face,
-                f"track{track.id}_{int(monotonic() * 1000)}",
-                max_samples=self.config.max_face_samples_per_identity,
-            )
+            self._apply_face_identity(track, identity, confidence, frame, face, force_learn=True)
             return identity, confidence, face
         if track.last_name:
             return self.store.resolve_identity(track.last_name), track.last_face_confidence, None

@@ -26,11 +26,11 @@ class AppConfig:
     face_soft_match_threshold: float = 90.0
     min_face_size_px: int = 72
     min_face_area_ratio: float = 0.012
-    min_unknown_face_observations: int = 4
+    min_unknown_face_observations: int = 1
     face_enrollment_min_sharpness: float = 18.0
     face_enrollment_min_brightness: float = 35.0
     face_enrollment_max_brightness: float = 220.0
-    face_learning_interval_seconds: int = 600
+    face_learning_interval_seconds: int = 180
     max_face_samples_per_identity: int = 48
     min_person_area_ratio: float = 0.015
     max_person_area_ratio: float = 0.70
@@ -98,11 +98,11 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "face_soft_match_threshold": 90.0,
         "min_face_size_px": 72,
         "min_face_area_ratio": 0.012,
-        "min_unknown_face_observations": 4,
+        "min_unknown_face_observations": 1,
         "face_enrollment_min_sharpness": 18.0,
         "face_enrollment_min_brightness": 35.0,
         "face_enrollment_max_brightness": 220.0,
-        "face_learning_interval_seconds": 600,
+        "face_learning_interval_seconds": 180,
         "max_face_samples_per_identity": 48,
         "min_person_area_ratio": 0.015,
         "max_person_area_ratio": 0.70,
@@ -117,11 +117,11 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "face_soft_match_threshold": 100.0,
         "min_face_size_px": 64,
         "min_face_area_ratio": 0.009,
-        "min_unknown_face_observations": 3,
+        "min_unknown_face_observations": 1,
         "face_enrollment_min_sharpness": 14.0,
         "face_enrollment_min_brightness": 30.0,
         "face_enrollment_max_brightness": 230.0,
-        "face_learning_interval_seconds": 300,
+        "face_learning_interval_seconds": 60,
         "max_face_samples_per_identity": 64,
         "min_person_area_ratio": 0.010,
         "max_person_area_ratio": 0.78,
@@ -136,11 +136,11 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "face_soft_match_threshold": 80.0,
         "min_face_size_px": 88,
         "min_face_area_ratio": 0.016,
-        "min_unknown_face_observations": 6,
+        "min_unknown_face_observations": 2,
         "face_enrollment_min_sharpness": 24.0,
         "face_enrollment_min_brightness": 45.0,
         "face_enrollment_max_brightness": 210.0,
-        "face_learning_interval_seconds": 900,
+        "face_learning_interval_seconds": 300,
         "max_face_samples_per_identity": 36,
         "min_person_area_ratio": 0.025,
         "max_person_area_ratio": 0.55,

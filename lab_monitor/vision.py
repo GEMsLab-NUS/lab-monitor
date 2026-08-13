@@ -193,11 +193,22 @@ class FaceService:
         return True
 
     def sample_count(self, name: str) -> int:
-        label_id = self._label_id_for_name(name)
-        target_dir = self.enrolled_dir / str(label_id)
-        if not target_dir.exists():
-            return 0
-        return sum(1 for item in target_dir.glob("*.png") if item.is_file())
+        return len(self.sample_paths(name))
+
+    def sample_paths(self, name: str) -> list[Path]:
+        paths: list[Path] = []
+        for raw_id, existing in self._labels.items():
+            if existing != name:
+                continue
+            target_dir = self.enrolled_dir / raw_id
+            if not target_dir.exists():
+                continue
+            paths.extend(item for item in target_dir.glob("*.png") if item.is_file())
+        return sorted(paths, key=lambda item: (item.stat().st_mtime, item.name), reverse=True)
+
+    def representative_sample_path(self, name: str) -> Path | None:
+        samples = self.sample_paths(name)
+        return samples[0] if samples else None
 
     def rename_label(self, old_name: str, new_name: str, *, max_samples: int | None = None) -> bool:
         old_ids = [int(raw_id) for raw_id, existing in self._labels.items() if existing == old_name]

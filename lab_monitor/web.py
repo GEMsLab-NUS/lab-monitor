@@ -12,7 +12,7 @@ import subprocess
 import sys
 from threading import Lock, Thread
 from typing import Any
-from urllib.parse import parse_qs, urlencode, urlparse
+from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse
 
 from .config import (
     CONFIG_FIELDS,
@@ -49,6 +49,7 @@ class RosterPerson:
     snapshot_url: str | None
     best_confidence: float | None
     face_score: int
+    face_sample_count: int = 0
 
 
 DASHBOARD_CSS = """
@@ -952,6 +953,11 @@ class DashboardServer:
                     if raw_id.isdigit():
                         self._send_event_snapshot(int(raw_id), store)
                         return
+                if parsed.path.startswith("/identity-face/"):
+                    name = unquote(parsed.path.removeprefix("/identity-face/")).strip()
+                    if name:
+                        self._send_identity_face(name, runtime_config)
+                        return
                 self.send_error(HTTPStatus.NOT_FOUND)
 
             def do_POST(self) -> None:  # noqa: N802
@@ -1113,6 +1119,27 @@ class DashboardServer:
                     self.send_error(HTTPStatus.NOT_FOUND)
                     return
                 self._send_snapshot_file(session.snapshot_path, store)
+
+            def _send_identity_face(self, name: str, config: AppConfig) -> None:
+                face_service = create_face_service(config)
+                file_path = face_service.representative_sample_path(name)
+                if file_path is None:
+                    self.send_error(HTTPStatus.NOT_FOUND)
+                    return
+                file_path = file_path.resolve()
+                try:
+                    if not file_path.is_relative_to(config.enrolled_faces_path.resolve()):
+                        self.send_error(HTTPStatus.FORBIDDEN)
+                        return
+                except ValueError:
+                    self.send_error(HTTPStatus.FORBIDDEN)
+                    return
+                data = file_path.read_bytes()
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", "image/png")
+                self.send_header("Content-Length", str(len(data)))
+                self.end_headers()
+                self.wfile.write(data)
 
             def _send_snapshot_file(self, snapshot_path: str, store: EventStore) -> None:
                 file_path = (store.data_dir / snapshot_path).resolve()
@@ -1290,6 +1317,8 @@ def render_roster_page(
 ) -> str:
     query = query or {}
     people = build_roster_people(store, config)
+    assign_roster_snapshots(people, store, config)
+    people = sort_roster_people(people, config)
     unnamed_people = [person for person in people if is_unnamed_identity(person.name, config)]
     named_people = [person for person in people if not is_unnamed_identity(person.name, config)]
     group = query.get("group", ["unnamed"])[0]
@@ -1301,7 +1330,6 @@ def render_roster_page(
     page = min(page, total_pages)
     start = (page - 1) * ROSTER_PAGE_SIZE
     page_people = active_people[start : start + ROSTER_PAGE_SIZE]
-    assign_roster_snapshots(page_people, store, config)
     visitor_count = len(unnamed_people)
     alias_count = sum(len(person.aliases) for person in people)
     names = sorted({person.name for person in people})
@@ -1697,13 +1725,25 @@ def build_roster_people(store: EventStore, config: AppConfig) -> list[RosterPers
                 snapshot_url=None,
                 best_confidence=best_face_distance(person_sessions),
                 face_score=face_evidence_score(person_sessions),
+                face_sample_count=0,
             )
         )
 
-    def sort_key(person: RosterPerson) -> tuple[int, int, float, str, int]:
+    return sort_roster_people(people, config)
+
+
+def sort_roster_people(people: list[RosterPerson], config: AppConfig) -> list[RosterPerson]:
+    def sort_key(person: RosterPerson) -> tuple[int, int, int, float, str, int]:
         known_rank = 1 if not person.name.startswith(config.unknown_identity_prefix) else 0
         last_seen = person.last_seen_ts or ""
-        return (person.face_score, len(person.sessions), person.total_seconds, last_seen, known_rank)
+        return (
+            person.face_score,
+            person.face_sample_count,
+            len(person.sessions),
+            person.total_seconds,
+            last_seen,
+            known_rank,
+        )
 
     return sorted(people, key=sort_key, reverse=True)
 
@@ -1717,7 +1757,16 @@ def assign_roster_snapshots(people: list[RosterPerson], store: EventStore, confi
         face_service = None
     for person in people:
         session = select_roster_snapshot_session(person.sessions, store, face_service)
-        person.snapshot_url = f"/session-snapshot/{session.id}" if session else None
+        if session:
+            person.snapshot_url = f"/session-snapshot/{session.id}"
+        elif face_service is not None:
+            sample_count = face_service.sample_count(person.name)
+            person.face_sample_count = sample_count
+            if sample_count:
+                person.snapshot_url = f"/identity-face/{quote(person.name, safe='')}"
+                person.face_score = max(person.face_score, 75)
+        else:
+            person.snapshot_url = None
 
 
 def select_roster_snapshot_session(
@@ -1802,7 +1851,13 @@ def render_roster_card(person: RosterPerson, saved_return: str, deleted_return: 
     )
     aliases = render_alias_chips(person, config)
     last_seen = format_ts_for_display(person.last_seen_ts) if person.last_seen_ts else "Never"
-    score_label = f"Face {person.face_score}%" if person.snapshot_url else "No verified face"
+    score_label = (
+        f"Face {person.face_score}%"
+        if person.snapshot_url and person.sessions
+        else "Face sample"
+        if person.snapshot_url
+        else "No verified face"
+    )
     return f"""
       <article class="roster-card">
         <div class="roster-media">

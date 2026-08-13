@@ -186,12 +186,12 @@ New installs use stricter defaults to reduce non-face visitor records:
 - `face_recognition_threshold`: lower is stricter for LBPH matching.
 - `face_soft_match_threshold`: lower is stricter for fallback matching.
 - `min_face_size_px` and `min_face_area_ratio`: reject small detections and distant false positives.
-- `min_unknown_face_observations`: require repeated high-quality unknown-face observations before creating a new visitor.
+- `min_unknown_face_observations`: high-quality unknown-face observations required before creating a new roster visitor. The default is `1`, so a usable new face is captured immediately.
 - `face_enrollment_min_sharpness`, `face_enrollment_min_brightness`, `face_enrollment_max_brightness`: reject blurred, too-dark, or overexposed crops.
-- `face_learning_interval_seconds`: minimum interval between automatic learning samples for the same recognized identity.
+- `face_learning_interval_seconds`: minimum interval between automatic learning samples for the same recognized identity. Lower values adapt faster but use more CPU.
 - `max_face_samples_per_identity`: maximum retained learned face samples per identity. Older samples are pruned automatically, so the model can improve without growing indefinitely.
 
-Face identity is captured before dwell logging. When a usable face appears, Lab Monitor immediately tries recognition and bounded learning for that track; the occupancy session is still written only after `min_dwell_seconds`. This avoids missing the current user when their face is visible briefly and then turns away or keeps moving.
+Face identity is captured before dwell logging. When a usable face appears, Lab Monitor immediately tries recognition, creates a roster Visitor if needed, and performs bounded learning for that track; the occupancy session is still written only after `min_dwell_seconds`. This avoids missing the current user when their face is visible briefly and then turns away or keeps moving, without cluttering the calendar with short appearances.
 
 Existing deployed machines keep their current `config.json`. To use the stricter profile after updating, open `Settings`, choose `Balanced` or `Conservative`, save, then restart with:
 

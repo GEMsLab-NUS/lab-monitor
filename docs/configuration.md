@@ -32,8 +32,8 @@ The dashboard `Settings` page can edit the common fields below. Saving from the 
 | `face_soft_match_threshold` | `90.0` | Secondary LBPH threshold for stitching temporary visitor identities when strict recognition fails. Lower is stricter. |
 | `min_face_size_px` | `72` | Minimum detected face width and height after frame resizing. Larger values reject distant or noisy face detections. |
 | `min_face_area_ratio` | `0.012` | Minimum face-box area as a fraction of the processed frame. |
-| `min_unknown_face_observations` | `4` | Repeated high-quality unknown-face observations required before creating a new visitor. |
-| `face_learning_interval_seconds` | `600` | Minimum interval between automatic bounded learning samples for the same identity. |
+| `min_unknown_face_observations` | `1` | High-quality unknown-face observations required before creating a new roster visitor. Calendar sessions still require dwell time. |
+| `face_learning_interval_seconds` | `180` | Minimum interval between automatic bounded learning samples for the same identity. |
 | `max_face_samples_per_identity` | `48` | Maximum retained learned face samples per identity. Older samples are pruned automatically. |
 | `min_person_area_ratio` | `0.015` | Minimum person-box area as a fraction of the processed frame. |
 | `max_person_area_ratio` | `0.70` | Maximum person-box area as a fraction of the processed frame. This rejects full-frame duplicate detections. |
@@ -47,4 +47,4 @@ The Settings page supports:
 - `Responsive`: faster dwell confirmation and polling.
 - `Conservative`: slower confirmation and stricter recognition behavior.
 
-Profiles update related monitoring fields, but you can still override individual values before saving. New tracks are face-first: a new person track starts only from a usable face-supported detection, and face identity is cached before dwell logging so short face appearances can still identify the later occupancy session.
+Profiles update related monitoring fields, but you can still override individual values before saving. New tracks are face-first: a new person track starts only from a usable face-supported detection. Once a high-quality face is observed, the face is immediately matched, added to the roster if needed, and cached before dwell logging. Occupancy sessions are still written only after `min_dwell_seconds`, so short face appearances improve recognition without cluttering the calendar.

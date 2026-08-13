@@ -11,9 +11,12 @@ from unittest.mock import patch
 from urllib.request import Request, urlopen
 from urllib.error import HTTPError
 
+import numpy as np
+
 from lab_monitor.config import AppConfig, load_config, save_config_updates, validate_config_updates
 from lab_monitor.reporting import build_analytics, sessions_to_csv, sessions_to_json_payload
 from lab_monitor.storage import EventStore, utc_now
+from lab_monitor.vision import FaceService
 from lab_monitor.web import DashboardServer, build_live_payload, render_live_page, render_roster_page, render_settings_page
 
 
@@ -450,6 +453,33 @@ class StorageTests(unittest.TestCase):
 
             self.assertIn(f"/session-snapshot/{good_id}", html)
             self.assertNotIn(f"/session-snapshot/{bad_id}", html)
+            store.close()
+
+    def test_roster_can_show_enrolled_face_sample_without_session(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            config = AppConfig(
+                data_dir=tmp,
+                min_face_size_px=64,
+                min_face_area_ratio=0.01,
+                face_enrollment_min_sharpness=0.0,
+            )
+            store = EventStore(Path(tmp) / "events.sqlite3", Path(tmp))
+            store.ensure_identity("Visitor 001")
+            face_service = FaceService(
+                config.faces_path,
+                config.enrolled_faces_path,
+                config.face_recognition_threshold,
+                min_face_size_px=config.min_face_size_px,
+                min_face_area_ratio=config.min_face_area_ratio,
+                min_sharpness=config.face_enrollment_min_sharpness,
+            )
+            frame = np.random.default_rng(17).integers(80, 180, size=(160, 160, 3), dtype=np.uint8)
+            self.assertTrue(face_service.enroll_face_crop("Visitor 001", frame, (30, 30, 80, 80), "sample"))
+
+            html = render_roster_page(store, config, None, {"group": ["unnamed"]})
+
+            self.assertIn("/identity-face/Visitor%20001", html)
+            self.assertIn("Face sample", html)
             store.close()
 
     def test_analytics_handles_empty_and_populated_sessions(self) -> None:
