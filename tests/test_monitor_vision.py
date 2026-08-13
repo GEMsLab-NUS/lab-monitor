@@ -265,6 +265,14 @@ class MonitorIdentityTests(unittest.TestCase):
                 self.enrolls += 1
                 return True
 
+            def recognize_face(
+                self,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                threshold: float | None = None,
+            ) -> tuple[str | None, float | None]:
+                return None, None
+
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
             config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=10)
@@ -286,6 +294,7 @@ class MonitorIdentityTests(unittest.TestCase):
 
             monitor._observe_face_identities(frame, [face])
             monitor._observe_face_identities(frame, [face])
+            monitor._observe_face_identities(frame, [face])
             track = monitor._tracker.tracks[1]
             track.first_seen = monotonic() - 20
             monitor._record_track_behaviors(frame, [])
@@ -293,7 +302,7 @@ class MonitorIdentityTests(unittest.TestCase):
             sessions = store.list_sessions()
             self.assertEqual(len(sessions), 1)
             self.assertEqual(sessions[0].identity_name, "Alice")
-            self.assertEqual(fake_face_service.enrolls, 1)
+            self.assertEqual(fake_face_service.enrolls, 2)
             store.close()
 
     def test_unknown_face_is_added_to_roster_before_dwell_without_session(self) -> None:
@@ -312,6 +321,14 @@ class MonitorIdentityTests(unittest.TestCase):
             ) -> bool:
                 self.enrolls += 1
                 return True
+
+            def recognize_face(
+                self,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                threshold: float | None = None,
+            ) -> tuple[str | None, float | None]:
+                return None, None
 
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)
@@ -339,6 +356,121 @@ class MonitorIdentityTests(unittest.TestCase):
             self.assertEqual(fake_face_service.enrolls, 1)
             store.close()
 
+    def test_soft_match_to_named_identity_creates_temporary_visitor_instead(self) -> None:
+        class FakeFaceService:
+            def __init__(self) -> None:
+                self.enrolls: list[str] = []
+
+            def recognize_face(
+                self,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                threshold: float | None = None,
+            ) -> tuple[str | None, float | None]:
+                if threshold is None:
+                    return None, 82.0
+                return "Alice", 82.0
+
+            def enroll_face_crop(
+                self,
+                name: str,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                sample: str,
+                *,
+                max_samples: int | None = None,
+            ) -> bool:
+                self.enrolls.append(name)
+                return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=60)
+            store = EventStore(config.database_path, config.data_path)
+            store.ensure_identity("Alice")
+            monitor = CameraMonitor(config, store)
+            fake_face_service = FakeFaceService()
+            monitor._face_service = fake_face_service  # type: ignore[assignment]
+            now = monotonic()
+            monitor._tracker.tracks[1] = Track(
+                id=1,
+                bbox=(180, 80, 240, 340),
+                centroid=(300.0, 250.0),
+                first_seen=now,
+                last_seen=now,
+            )
+            frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+            face = (240, 130, 80, 86)
+
+            monitor._observe_face_identities(frame, [face])
+
+            track = monitor._tracker.tracks[1]
+            self.assertEqual(track.last_name, "Visitor 001")
+            self.assertEqual(fake_face_service.enrolls, ["Visitor 001"])
+            self.assertEqual(sorted(store.list_identity_names()), ["Alice", "Visitor 001"])
+            self.assertEqual(store.list_sessions(), [])
+            store.close()
+
+    def test_soft_match_can_merge_temporary_visitors_without_named_identity(self) -> None:
+        class FakeFaceService:
+            def __init__(self) -> None:
+                self.enrolls: list[str] = []
+                self.renames: list[tuple[str, str]] = []
+
+            def recognize_face(
+                self,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                threshold: float | None = None,
+            ) -> tuple[str | None, float | None]:
+                if threshold is None:
+                    return None, 74.0
+                return "Visitor 001", 74.0
+
+            def enroll_face_crop(
+                self,
+                name: str,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                sample: str,
+                *,
+                max_samples: int | None = None,
+            ) -> bool:
+                self.enrolls.append(name)
+                return True
+
+            def rename_label(self, old_name: str, new_name: str, *, max_samples: int | None = None) -> bool:
+                self.renames.append((old_name, new_name))
+                return True
+
+        with tempfile.TemporaryDirectory() as tmp:
+            data_dir = Path(tmp)
+            config = AppConfig(data_dir=str(data_dir), min_dwell_seconds=60)
+            store = EventStore(config.database_path, config.data_path)
+            store.ensure_identity("Visitor 001")
+            monitor = CameraMonitor(config, store)
+            fake_face_service = FakeFaceService()
+            monitor._face_service = fake_face_service  # type: ignore[assignment]
+            now = monotonic()
+            monitor._tracker.tracks[1] = Track(
+                id=1,
+                bbox=(180, 80, 240, 340),
+                centroid=(300.0, 250.0),
+                first_seen=now,
+                last_seen=now,
+            )
+            frame = np.full((480, 640, 3), 120, dtype=np.uint8)
+            face = (240, 130, 80, 86)
+
+            monitor._observe_face_identities(frame, [face])
+            monitor._observe_face_identities(frame, [face])
+
+            track = monitor._tracker.tracks[1]
+            self.assertEqual(track.last_name, "Visitor 001")
+            self.assertEqual(store.resolve_identity("Visitor 002"), "Visitor 001")
+            self.assertEqual(fake_face_service.renames, [("Visitor 002", "Visitor 001")])
+            store.close()
+
     def test_unknown_face_reuses_allocated_visitor_after_first_enrollment(self) -> None:
         class FakeFaceService:
             def __init__(self) -> None:
@@ -355,6 +487,14 @@ class MonitorIdentityTests(unittest.TestCase):
             ) -> bool:
                 self.enrolls += 1
                 return True
+
+            def recognize_face(
+                self,
+                frame: np.ndarray,
+                face: tuple[int, int, int, int],
+                threshold: float | None = None,
+            ) -> tuple[str | None, float | None]:
+                return None, None
 
         with tempfile.TemporaryDirectory() as tmp:
             data_dir = Path(tmp)

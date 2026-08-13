@@ -250,6 +250,9 @@ class CameraMonitor:
                 self._apply_face_identity(track, name, confidence, frame, face)
                 continue
             if matched:
+                if track.last_name is None:
+                    track.last_name = self.store.allocate_identity(self.config.unknown_identity_prefix)
+                    self._apply_face_identity(track, track.last_name, confidence, frame, face, force_learn=True)
                 continue
             track.unknown_face_observations += 1
             if track.last_name is None:
@@ -268,7 +271,28 @@ class CameraMonitor:
         *,
         force_learn: bool = False,
     ) -> None:
-        track.last_name = self.store.resolve_identity(name)
+        previous_name = self.store.resolve_identity(track.last_name) if track.last_name else None
+        resolved_name = self.store.resolve_identity(name)
+        if (
+            previous_name
+            and previous_name != resolved_name
+            and self._is_temporary_identity(previous_name)
+            and self._is_temporary_identity(resolved_name)
+        ):
+            self.store.rename_identity(
+                previous_name,
+                resolved_name,
+                merge_gap_minutes=self.config.session_merge_gap_minutes,
+            )
+            rename_label = getattr(self._face_service, "rename_label", None)
+            if callable(rename_label):
+                rename_label(
+                    previous_name,
+                    resolved_name,
+                    max_samples=self.config.max_face_samples_per_identity,
+                )
+            resolved_name = self.store.resolve_identity(resolved_name)
+        track.last_name = resolved_name
         track.last_face_box = face
         track.last_face_confidence = confidence
         track.last_face_seen = monotonic()
@@ -329,6 +353,10 @@ class CameraMonitor:
         face: BBox,
     ) -> tuple[str | None, float | None, bool]:
         name, confidence = self._identify_face(frame, face)
+        is_soft_match = False
+        if name is None:
+            name, confidence = self._identify_temporary_face(frame, face, confidence)
+            is_soft_match = name is not None
         if name is None:
             track.identity_observations.clear()
             return None, confidence, False
@@ -337,7 +365,7 @@ class CameraMonitor:
         if current == canonical:
             track.identity_observations[canonical] = max(
                 track.identity_observations.get(canonical, 0),
-                self._required_identity_observations(confidence),
+                self._required_identity_observations(canonical, confidence),
             )
             return canonical, confidence, True
         track.identity_observations = {
@@ -346,30 +374,53 @@ class CameraMonitor:
             if observed == canonical
         }
         track.identity_observations[canonical] = track.identity_observations.get(canonical, 0) + 1
-        required = self._required_identity_observations(confidence)
-        if current is not None:
+        required = self._required_identity_observations(canonical, confidence, is_soft_match=is_soft_match)
+        if current is not None and not (self._is_temporary_identity(current) and self._is_temporary_identity(canonical)):
             required += 1
         if track.identity_observations[canonical] < required:
             return None, confidence, True
         return canonical, confidence, True
 
-    def _required_identity_observations(self, confidence: float | None) -> int:
-        if confidence is not None and confidence <= self.config.face_recognition_threshold:
-            return 2
-        return max(2, min(3, self.config.min_unknown_face_observations))
+    def _required_identity_observations(
+        self,
+        name: str,
+        confidence: float | None,
+        *,
+        is_soft_match: bool = False,
+    ) -> int:
+        temporary = self._is_temporary_identity(name)
+        required = 2 if temporary else 3
+        if is_soft_match and not temporary:
+            required += 1
+        if confidence is not None and confidence <= self.config.face_recognition_threshold - 10:
+            required = max(2, required - 1)
+        return required
 
     def _identify_face(self, frame: np.ndarray, face: BBox) -> tuple[str | None, float | None]:
         name, confidence = self._face_service.recognize_face(frame, face)
         if name:
             return self.store.resolve_identity(name), confidence
+        return None, confidence
+
+    def _identify_temporary_face(
+        self,
+        frame: np.ndarray,
+        face: BBox,
+        fallback_confidence: float | None,
+    ) -> tuple[str | None, float | None]:
         soft_name, soft_confidence = self._face_service.recognize_face(
             frame,
             face,
             threshold=self.config.face_soft_match_threshold,
         )
-        if soft_name:
-            return self.store.resolve_identity(soft_name), soft_confidence
-        return None, soft_confidence if soft_confidence is not None else confidence
+        if soft_name and self._is_temporary_identity(soft_name):
+            canonical = self.store.resolve_identity(soft_name)
+            if self._is_temporary_identity(canonical):
+                return canonical, soft_confidence
+        return None, soft_confidence if soft_confidence is not None else fallback_confidence
+
+    def _is_temporary_identity(self, name: str) -> bool:
+        return name.startswith(self.config.unknown_identity_prefix)
 
     def _track_for_face(self, face: BBox) -> Track | None:
         for track in self._tracker.tracks.values():

@@ -22,8 +22,8 @@ class AppConfig:
     max_tracking_distance_px: int = 120
     web_host: str = "127.0.0.1"
     web_port: int = 8765
-    face_recognition_threshold: float = 62.0
-    face_soft_match_threshold: float = 90.0
+    face_recognition_threshold: float = 52.0
+    face_soft_match_threshold: float = 68.0
     min_face_size_px: int = 72
     min_face_area_ratio: float = 0.012
     min_unknown_face_observations: int = 1
@@ -94,8 +94,8 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "poll_interval_ms": 250,
         "stationary_seconds": 120,
         "max_tracking_distance_px": 120,
-        "face_recognition_threshold": 62.0,
-        "face_soft_match_threshold": 90.0,
+        "face_recognition_threshold": 52.0,
+        "face_soft_match_threshold": 68.0,
         "min_face_size_px": 72,
         "min_face_area_ratio": 0.012,
         "min_unknown_face_observations": 1,
@@ -113,8 +113,8 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "poll_interval_ms": 120,
         "stationary_seconds": 60,
         "max_tracking_distance_px": 160,
-        "face_recognition_threshold": 70.0,
-        "face_soft_match_threshold": 100.0,
+        "face_recognition_threshold": 58.0,
+        "face_soft_match_threshold": 74.0,
         "min_face_size_px": 64,
         "min_face_area_ratio": 0.009,
         "min_unknown_face_observations": 1,
@@ -132,8 +132,8 @@ WORK_PROFILES: dict[str, dict[str, Any]] = {
         "poll_interval_ms": 700,
         "stationary_seconds": 240,
         "max_tracking_distance_px": 90,
-        "face_recognition_threshold": 55.0,
-        "face_soft_match_threshold": 80.0,
+        "face_recognition_threshold": 48.0,
+        "face_soft_match_threshold": 60.0,
         "min_face_size_px": 88,
         "min_face_area_ratio": 0.016,
         "min_unknown_face_observations": 2,
